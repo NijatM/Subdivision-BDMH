@@ -702,6 +702,42 @@ def write_stl(path: str, result: PrintResult, part: int | None = None) -> dict:
     return validate_stl(path)
 
 
+def prepare_exact(mesh: PolyMesh, s: PrintSettings, scale: float) -> PrintResult:
+    """Print model straight from a mesh that is already a clean closed solid (e.g. a vessel): no voxel
+    remesh, so exact spheres and flat rims stay exact. `scale` converts model units to millimetres."""
+    t0 = time.perf_counter()
+    notes = []
+    if np.any(mesh.he_twin < 0):
+        notes.append("the mesh is not closed: switch the vessel off and use the voxel print model")
+    P = to_print_coords(mesh.V, s.up) * scale
+    F = mesh.triangles().astype(np.int64)
+    P[:, 2] -= P[:, 2].min()
+    P[:, :2] -= 0.5 * (P[:, :2].min(0) + P[:, :2].max(0))
+    tri = P[F]
+    volume = float(np.einsum("ij,ij->i", tri[:, 0], np.cross(tri[:, 1], tri[:, 2])).sum() / 6.0)
+    if volume < 0:
+        F, volume = F[:, ::-1].copy(), -volume
+    wall = mesh.vattr.get("wall_mm")
+    thin = (wall < 2 * s.nozzle_mm - 1e-6) if wall is not None else np.zeros(len(P), bool)
+    thin_fraction = float(thin.mean())
+    if thin_fraction > 0.02:
+        notes.append(f"{100 * thin_fraction:.0f}% of the wall is thinner than {2 * s.nozzle_mm:.1f} mm "
+                     "(2 nozzle widths): it may print with gaps")
+    dims = tuple(float(x) for x in np.ptp(P, axis=0))
+    part = PrintPart("", "z", 0, len(P), 0, len(F), np.eye(3), np.zeros(3), np.zeros(3), (0, 0, 0), dims, 1)
+    return PrintResult(P.astype(np.float32), F, 0.0, (0, 0, 0), dims, volume / 1000.0, thin_fraction, thin,
+                       vertex_normals(P, F)[:, 2].astype(np.float32), [part], [], 0, notes,
+                       time.perf_counter() - t0)
+
+
+def prepare_exact_arrays(V, face_ptr, face_idx, settings: dict, scale: float, wall=None) -> PrintResult:
+    """Picklable entry point for prepare_exact."""
+    m = PolyMesh(V, face_ptr, face_idx)
+    if wall is not None:
+        m.vattr["wall_mm"] = wall
+    return prepare_exact(m, PrintSettings(**settings), scale)
+
+
 def prepare_arrays(V, face_ptr, face_idx, settings: dict) -> PrintResult:
     """Picklable entry point for running print preparation in a separate process."""
     return prepare(PolyMesh(V, face_ptr, face_idx), PrintSettings(**settings))

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from . import attractors, catmull_clark, doo_sabin, intrinsic, layers, merge
+from . import attractors, catmull_clark, doo_sabin, intrinsic, layers, merge, vessel
 from .mesh import PolyMesh
 from .schedule import Design
 from .shapes import make_base
@@ -53,6 +53,7 @@ class RunResult:
     capped_by_budget: bool
     seconds: float
     cache_hits: int
+    relief: PolyMesh | None = None  # with a vessel: the subdivided form that became its inner face
 
 
 class Pipeline:
@@ -124,4 +125,7 @@ class Pipeline:
             mesh = merge.maybe_merge(design, mesh, level)
             self._put(key, mesh)
             reached = level + 1
-        return RunResult(mesh, reached, depth, capped, time.perf_counter() - t0, hits)
+        relief = None
+        if vessel.active(design) and mesh.n_faces:
+            relief, mesh = mesh, vessel.build(design, mesh)
+        return RunResult(mesh, reached, depth, capped, time.perf_counter() - t0, hits, relief)

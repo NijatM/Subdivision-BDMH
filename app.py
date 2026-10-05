@@ -18,12 +18,14 @@ import polyscope.imgui as psim
 from hansmeyer import CC_WEIGHTS, DS_WEIGHTS, MAX_ITERATIONS, SHAPES, Design, IterationSpec, Pipeline, default_spec
 from hansmeyer.meshio import atomic_write, export
 from hansmeyer.view import apply_scene_theme, apply_ui_theme, set_view, setup_scene, show_mesh, write_png
-from hansmeyer import functions, intrinsic
+from hansmeyer import functions, intrinsic, vessel
 from hansmeyer.attractors import face_positions
 from ui_attractors import AttractorPanel
 from ui_intrinsic import IntrinsicPanel
 from ui_layers import LayerPanel
 from ui_print import PrintPanel
+from ui_section import SectionTool
+from ui_vessel import VesselPanel
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 PRESET_DIR = os.path.join(ROOT, "presets")
@@ -103,6 +105,8 @@ class App:
         self.intr_panel = IntrinsicPanel(self)
         self.intr_panel.reset()
         self.print_panel = PrintPanel(self)
+        self.vessel_panel = VesselPanel(self)
+        self.section = SectionTool(self)
 
     # ------------------------------------------------------------------ theme
     def set_theme(self, name):
@@ -201,6 +205,8 @@ class App:
                     return None, None
                 P = face_positions(mesh, ly["space"])
                 return functions.evaluate(ly["function"], P, ly["params"], ly["domain"]), (-1.0, 1.0)
+            if mode == "light":
+                return (vessel.light(mesh), (0.0, 1.0)) if "wall_mm" in mesh.vattr else (None, None)
             if mode.startswith("measure:"):
                 return intrinsic.measure(mesh, mode.split(":", 1)[1]), (0.0, 1.0)
             if mode == "tags" and "tags" in mesh.fattr:
@@ -218,7 +224,7 @@ class App:
             return
         values, vrange = self.color_values(self.result.mesh)
         show_mesh(self.result.mesh, edges=self.show_edges, face_values=values, vrange=vrange,
-                  label=self.color_mode.replace("measure:", ""))
+                  label=self.color_mode.replace("measure:", ""), cmap="inferno" if self.color_mode == "light" else "viridis")
         if self.intr_panel.pick != "off" or self.print_panel.showing:
             ps.get_surface_mesh("form").set_enabled(False)
 
@@ -253,6 +259,7 @@ class App:
         self.theme_ui()
         self.preset_ui()
         self.base_ui()
+        self.vessel_panel.ui()
         self.depth_ui()
         if psim.CollapsingHeader("Iteration schedule", _OPEN):
             self.schedule_ui()
@@ -260,6 +267,7 @@ class App:
         self.layer_panel.ui()
         self.intr_panel.ui()
         self.view_export_ui()
+        self.section.ui()
         self.print_panel.ui()
         self.status_ui()
         psim.PopItemWidth()
@@ -512,7 +520,8 @@ class App:
         if changed:
             self.refresh_display()
         modes = [("none", "plain"), ("influence", "attractor influence"), ("layer", "selected layer's field"),
-                 ("tags", "group tags")] + [(f"measure:{k}", v) for k, v in intrinsic.MEASURES.items()]
+                 ("tags", "group tags"), ("light", "light through the wall (vessel)")] + \
+            [(f"measure:{k}", v) for k, v in intrinsic.MEASURES.items()]
         keys = [k for k, _ in modes]
         cur = keys.index(self.color_mode) if self.color_mode in keys else 0
         changed, idx = psim.Combo("colour by", cur, [v for _, v in modes])

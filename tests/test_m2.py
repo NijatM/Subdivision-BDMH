@@ -11,7 +11,7 @@ from hansmeyer.meshio import MeshImportError, clean_mesh, load_obj, orient_faces
 from hansmeyer.shapes import SHAPES, UNIT_RADIUS
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CLOSED = [n for n in SHAPES if n not in ("panel", "obj")]
+CLOSED = [n for n in SHAPES if n not in ("panel", "obj", "sphere_open")]  # open shapes are tested elsewhere
 
 
 def rand_weights(rng, scale=0.3):

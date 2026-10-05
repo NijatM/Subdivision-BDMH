@@ -11,14 +11,18 @@ import time
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 
+import json
+
 import numpy as np
 import polyscope as ps
 import polyscope.imgui as psim
 
-from hansmeyer.printprep import (UP_KEYS, PrintSettings, best_up, finest_voxel, grid_for, prepare_arrays, scale_for,
-                                 stl_bytes, up_rotation, write_stl)
+from hansmeyer import vessel
+
+from hansmeyer.printprep import (UP_KEYS, PrintSettings, best_up, finest_voxel, grid_for, prepare_arrays,
+                                 prepare_exact_arrays, scale_for, stl_bytes, up_rotation, write_stl)
 from hansmeyer.view import turntable
-from ui_common import WARN, toggle_button
+from ui_common import WARN, toggle_button, wrapped_colored
 
 PREVIEW = "print model"
 PLANES = "cut planes"
@@ -87,6 +91,7 @@ class PrintPanel:
         self.result_settings = None
         self.ref = None  # (triangles, output resolution, seconds, voxels) of the last run, for estimates
         self.showing = False
+        self.shown_V = None  # vertices of the print model as shown (for the section view and turntables)
         self.view = "layout"  # print layout | assembled
         self.explode = 15.0
         self.colour = "support"  # support | thin | parts
@@ -101,11 +106,19 @@ class PrintPanel:
     def _design_key(self):
         d = self.app.design
         keys = d.level_keys(d.full_depth, self.app.root)
-        return (keys[-1] if keys else d.base_key(self.app.root), tuple(vars(self.s).items()))
+        return (keys[-1] if keys else d.base_key(self.app.root), tuple(vars(self.s).items()),
+                json.dumps(d.vessel, sort_keys=True) if vessel.active(d) else "")
+
+    def vessel_mode(self) -> bool:
+        return vessel.active(self.app.design)
 
     def defaults_for_shape(self):
-        """Panels print lying flat with a solid base; everything else stands up."""
+        """Vessels print upside down on their rim, panels lie flat on a solid base, everything else stands up."""
+        if self.vessel_mode():
+            self.s.up, self.s.base = "-y", False
+            return
         panel = self.app.base_mesh is not None and np.any(self.app.base_mesh.vert_is_boundary)
+        panel = panel and self.app.design.base.get("shape") != "sphere_open"
         self.s.up = "z" if panel else "y"
         self.s.base = bool(panel)
 
@@ -197,6 +210,7 @@ class PrintPanel:
         if ps.has_surface_mesh("form"):
             ps.get_surface_mesh("form").set_enabled(True)
         self.showing = False
+        self.shown_V = None
         self._planes_key = None
 
     # ------------------------------------------------------- print preview
@@ -232,6 +246,7 @@ class PrintPanel:
         ps.remove_surface_mesh(PLANES, error_if_absent=False)
         self._planes_key = None
         self.showing = True
+        self.shown_V = np.asarray(V)
         if reset_camera:
             c = 0.5 * (V.min(0) + V.max(0))
             ext = float(np.linalg.norm(V.max(0) - V.min(0)))
@@ -299,8 +314,15 @@ class PrintPanel:
             return
         m = self.app.result.mesh
         self.s.nozzle_mm = NOZZLES[self.nozzle_idx]
-        settings = dict(vars(self.s))
-        future = self._worker().submit(prepare_arrays, m.V, m.face_ptr, m.face_idx, settings)
+        if self.vessel_mode():  # already a clean closed solid: exported exactly, no voxel remesh
+            D = self.app.design.vessel["diameter_mm"]
+            self.s.size_mm, self.s.size_axis = D, "width"
+            settings = dict(vars(self.s))
+            future = self._worker().submit(prepare_exact_arrays, m.V, m.face_ptr, m.face_idx, settings, D / 2.0,
+                                           m.vattr.get("wall_mm"))
+        else:
+            settings = dict(vars(self.s))
+            future = self._worker().submit(prepare_arrays, m.V, m.face_ptr, m.face_idx, settings)
         self.job = {"future": future, "started": time.perf_counter(), "key": self._design_key(), "settings": settings}
         self.app.error = ""
 
@@ -327,8 +349,9 @@ class PrintPanel:
         self.result, self.result_key, self.result_settings = result, job["key"], job["settings"]
         self._overhang = None
         self.last_export = []
-        res = max(result.dims_mm) / (result.voxel_mm * job["settings"]["detail"])
-        self.ref = (len(result.F), res, result.seconds, float(np.prod(result.grid)))
+        if result.voxel_mm > 0:  # voxel runs calibrate the size / time estimates
+            res = max(result.dims_mm) / (result.voxel_mm * job["settings"]["detail"])
+            self.ref = (len(result.F), res, result.seconds, float(np.prod(result.grid)))
         self.view = "layout"
         self.show_print()
         n = len(result.parts)
@@ -370,15 +393,18 @@ class PrintPanel:
             self.turntable_ui()
 
     def print_ui(self):
-        psim.TextWrapped("Rebuilds the form as closed solids a slicer can read: self-intersections merged, open "
-                         "skins thickened, sized in mm. Cut it into parts to print with far less support.")
-        self.printer_ui()
-        self.size_ui()
-        self.orientation_ui()
-        self.underside_ui()
-        self.cut_ui()
-        self.resolution_ui()
-        self.advanced_ui()
+        if self.vessel_mode():
+            self.vessel_print_ui()
+        else:
+            psim.TextWrapped("Rebuilds the form as closed solids a slicer can read: self-intersections merged, open "
+                             "skins thickened, sized in mm. Cut it into parts to print with far less support.")
+            self.printer_ui()
+            self.size_ui()
+            self.orientation_ui()
+            self.underside_ui()
+            self.cut_ui()
+            self.resolution_ui()
+            self.advanced_ui()
         psim.Spacing()
         if self.busy():
             psim.TextColored(WARN, f"working in a background process... {time.perf_counter() - self.job['started']:.0f}s")
@@ -390,6 +416,19 @@ class PrintPanel:
             self.defaults_for_shape()
         psim.SetItemTooltip("Panels lie flat on a solid base; everything else stands up (model Y up).")
         self.result_ui()
+
+    def vessel_print_ui(self):
+        v = self.app.design.vessel
+        psim.TextWrapped("Vessel: the mesh is already one clean, closed solid, so it is exported exactly - no "
+                         "voxel remesh - and the outside stays a perfect sphere.")
+        self.printer_ui()
+        D = v["diameter_mm"]
+        ok = self.fits(np.array([D, D, D]), any_way=False)
+        psim.TextColored(OK if ok else WARN, f"diameter {D:.0f} mm (set in the Vessel panel)"
+                         + ("  - fits the bed" if ok else "  - bigger than the bed"))
+        self.orientation_ui()
+        if self.s.up == "-y":
+            wrapped_colored(GREY, "Upside down: the opening's rim stands on the plate, the dome prints on top.")
 
     def printer_ui(self):
         psim.SeparatorText("Printer")
@@ -623,7 +662,9 @@ class PrintPanel:
                          + (f"{n} parts, " if n > 1 else "")
                          + f"{r.dims_mm[0]:.1f} x {r.dims_mm[1]:.1f} x {r.dims_mm[2]:.1f} mm"
                          + (" assembled" if n > 1 else "") + f", {len(r.F):,} triangles")
-        psim.Text(f"volume {r.volume_cm3:.1f} cm3  ~{r.mass_g():.0f} g PLA at 20% infill, detail {r.voxel_mm:.2f} mm"
+        mass = f"~{r.volume_cm3 * 1.24:.0f} g PLA (all wall)" if r.voxel_mm == 0 else f"~{r.mass_g():.0f} g PLA at 20% infill"
+        psim.Text(f"volume {r.volume_cm3:.1f} cm3  {mass}, "
+                  + (f"detail {r.voxel_mm:.2f} mm" if r.voxel_mm > 0 else "exact mesh")
                   + (f", {r.pins} pin holes" if n > 1 else ""))
         need, free = stl_bytes(r), shutil.disk_usage(self.app.root).free
         psim.TextColored(WARN if free < need + 64e6 else GREY, f"STL ~{need / 1e6:.0f} MB, {free / 1e9:.1f} GB free on disk")
@@ -710,8 +751,7 @@ class PrintPanel:
     def render_turntable(self):
         """Orbit whatever is shown: the print model (z-up, mm) or the form (y-up)."""
         if self.showing and self.result is not None:
-            V, up = ps.get_surface_mesh(PREVIEW).get_vertex_positions() if ps.has_surface_mesh(PREVIEW) \
-                else self.result.V, "z"
+            V, up = (self.shown_V if self.shown_V is not None else self.result.V), "z"
         elif self.app.result is not None:
             V, up = self.app.result.mesh.V, "y"
         else:

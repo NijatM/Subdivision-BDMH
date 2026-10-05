@@ -14,6 +14,13 @@ WEIGHT_NAMES = [w.name for w in ALL_WEIGHTS]
 WEIGHT_LABELS = [w.label for w in ALL_WEIGHTS]
 
 
+def wrapped_colored(color, text: str) -> None:
+    """Coloured text that wraps at the panel edge."""
+    psim.PushStyleColor(psim.ImGuiCol_Text, color)
+    psim.TextWrapped(text)
+    psim.PopStyleColor()
+
+
 def toggle_button(label: str, active: bool) -> bool:
     if active:
         psim.PushStyleColor(psim.ImGuiCol_Button, ACTIVE)

@@ -125,6 +125,30 @@ def cage(size: float = 2.0, bar: float = 0.2, segments: int = 5) -> PolyMesh:
     return polycube(filled, size / n)
 
 
+def sphere_open(sides: int = 16, rings: int = 10, opening: float = 40.0) -> PolyMesh:
+    """A unit sphere with a circular opening on top (+y): rings of quads from the opening down to a
+    triangle fan at the bottom pole. `opening` is the opening's angular radius from the top, in degrees
+    (its diameter is 2 sin(opening) of the sphere's)."""
+    n, k = max(int(sides), 3), max(int(rings), 2)
+    t0 = np.radians(min(max(float(opening), 5.0), 150.0))
+    theta = np.linspace(t0, np.pi, k + 1)[:-1]  # k rings; the pole closes the bottom
+    phi = 2 * np.pi * np.arange(n) / n
+    T, P = np.meshgrid(theta, phi, indexing="ij")
+    V = np.stack([np.sin(T) * np.cos(P), np.cos(T), np.sin(T) * np.sin(P)], -1).reshape(-1, 3)
+    V = np.vstack([V, [0.0, -1.0, 0.0]])
+    pole = len(V) - 1
+    faces = []
+    for r in range(k - 1):
+        for i in range(n):
+            j = (i + 1) % n
+            faces.append([r * n + i, (r + 1) * n + i, (r + 1) * n + j, r * n + j])
+    faces += [[(k - 1) * n + i, pole, (k - 1) * n + (i + 1) % n] for i in range(n)]
+    m = PolyMesh.from_faces(V, faces)
+    if np.einsum("ij,ij->", m.face_area_vec, m.face_centroid) < 0:  # make the normals point outward
+        m = PolyMesh.from_faces(V, [f[::-1] for f in faces])
+    return m
+
+
 def octahedron(radius: float = UNIT_RADIUS) -> PolyMesh:
     V = np.array([[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]], float) * radius
     return PolyMesh.from_faces(V, _orient_convex(V, _triangles_by_edge_length(V)))
@@ -243,6 +267,17 @@ SHAPES: dict[str, ShapeDef] = {
             ),
             "diagonal", "The 12 edges of a cube as bars, all six faces open. Add a 'clamp to box' fold layer "
                         "for flat outer faces.",
+        ),
+        ShapeDef(
+            "sphere_open", "Sphere with opening (vessel)", sphere_open,
+            (
+                Param("sides", "sides", 4, 48, 16, True, "Quads around."),
+                Param("rings", "rings", 2, 32, 10, True, "Quads from the opening to the bottom pole."),
+                Param("opening", "opening (deg)", 10.0, 80.0, 40.0,
+                      help="Angular radius of the top opening. The opening's diameter = sphere diameter x sin(angle)."),
+            ),
+            "three_quarter", "A sphere with a circular opening on top. With Vessel on, it becomes a thin-walled "
+                             "lithophane sphere: smooth outside, the subdivision relief inside.",
         ),
         ShapeDef("tetrahedron", "Tetrahedron", tetrahedron, (_R,), "three_quarter", "Platonic solid, 4 triangles."),
         ShapeDef("octahedron", "Octahedron", octahedron, (_R,), "diagonal", "Platonic solid, 8 triangles."),

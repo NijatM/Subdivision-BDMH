@@ -87,6 +87,7 @@ class Design:
     motifs: dict = field(default_factory=dict)  # motif label ("4F4E") -> U for eq. 10-11
     intrinsic: list = field(default_factory=list)  # measure-driven weight rules
     merge: dict = field(default_factory=dict)  # vertex merging / porosity, see merge.py
+    vessel: dict = field(default_factory=dict)  # thin-walled lithophane shell around the form, see vessel.py
 
     def __post_init__(self):
         its = [i if isinstance(i, IterationSpec) else IterationSpec(**i) for i in self.iterations]
@@ -98,7 +99,7 @@ class Design:
             raise ValueError("boundary must be 'smooth' or 'locked'")
         if self.attractor_space not in ("current", "rest"):
             raise ValueError("attractor_space must be 'current' or 'rest'")
-        from . import intrinsic, layers, merge  # local imports: these modules import this one
+        from . import intrinsic, layers, merge, vessel  # local imports: these modules import this one
         from .attractors import normalize
 
         self.attractors = [normalize(a) for a in self.attractors]
@@ -107,6 +108,7 @@ class Design:
         self.intrinsic = [intrinsic.normalize_rule(r) for r in self.intrinsic]
         self.motifs = {str(k): float(v) for k, v in self.motifs.items()}
         self.merge = merge.normalize(self.merge)
+        self.vessel = vessel.normalize(self.vessel)
 
     # ------------------------------------------------------------- caching key
     def base_key(self, root: str | None = None) -> str:
@@ -154,6 +156,8 @@ class Design:
                 d.pop(key)
         if not d["merge"]["enabled"]:
             d.pop("merge")
+        if not d["vessel"]["enabled"]:
+            d.pop("vessel")
         return d
 
     @classmethod

@@ -1,0 +1,101 @@
+{
+  "name": "Lithophane sphere",
+  "description": "A thin-walled sphere with a circular opening on top (Vessel panel). Outside: an exact, smooth sphere. Inside: the subdivision relief - a Doo-Sabin step, fBm-varied extrusions and a Worley vein network - mapped into a 0.8 - 3 mm wall. Lit from inside, the thin veins glow and the thick cells stay dark (Light preview). Use the Section view to look at the relief while editing. Print upside down on the rim (the Print panel does this and exports the mesh exactly).",
+  "base": {
+    "shape": "sphere_open",
+    "sides": 16,
+    "rings": 10,
+    "opening": 40.0
+  },
+  "extrusion": "relative",
+  "boundary": "locked",
+  "fade_rows": 1.0,
+  "preview_depth": 4,
+  "full_depth": 5,
+  "iterations": [
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_f": 0.35,
+        "w_c": -0.5,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "ds",
+      "weights": {
+        "w_f": 0.3,
+        "w_e": -0.2,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_e": 0.4,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_f": -0.4,
+        "w3": 1.0,
+        "w4": -1.0,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_e": 0.3,
+        "w_f": 0.15,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    }
+  ],
+  "view": "three_quarter",
+  "vessel": {
+    "enabled": true,
+    "diameter_mm": 120.0,
+    "min_wall_mm": 0.8,
+    "max_wall_mm": 3.0,
+    "rim_mm": 2.5
+  },
+  "layers": [
+    {
+      "name": "variation",
+      "target": "weight",
+      "function": "fbm",
+      "params": {
+        "frequency": 2.0,
+        "seed": 9
+      },
+      "weight": "w_f",
+      "blend": "add",
+      "amplitude": 0.6,
+      "from": 2,
+      "to": 4,
+      "space": "rest"
+    },
+    {
+      "name": "veins",
+      "target": "displacement",
+      "function": "worley",
+      "params": {
+        "mode": 1,
+        "frequency": 3.5,
+        "seed": 3
+      },
+      "amplitude": 0.6,
+      "from": 3,
+      "to": 4,
+      "space": "rest"
+    }
+  ]
+}

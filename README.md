@@ -42,6 +42,8 @@ Requirements: **Python 3.10+** ([python.org](https://www.python.org/downloads/);
   - Cube and Platonic solids (tetrahedron, octahedron, dodecahedron, icosahedron).
   - **Column: box on base** (paper Fig. 4) and **Column: classic** (Fig. 7 style: base, shaft with entasis and taper, echinus, abacus).
   - **Panel**: an open relief tile with optional bend or saddle.
+  - **Cube cage (frame)**: the 12 edges of a cube as bars, all six faces open.
+  - **Sphere with opening (vessel)**: a sphere with a circular opening on top. *opening* is its angular radius.
   - **Import OBJ**: drop `.obj` files into `inputs/` (a sample `l_block.obj` is included), pick one and press *Load OBJ*. Duplicate vertices are welded, winding is repaired, and the mesh is scaled to fit. Non-manifold meshes are rejected with an explanation.
 - **Boundary** (open meshes only):
   - *smooth* uses the standard Catmull-Clark boundary rules.
@@ -49,6 +51,11 @@ Requirements: **Python 3.10+** ([python.org](https://www.python.org/downloads/);
 - **Depth & extrusion**: *preview depth* recomputes live while you drag. After 1.5 s idle (or *Bake full depth*), the **full depth** is computed. The face budget caps runaway depths.
 - **Iteration schedule**: pick an iteration, choose Catmull-Clark or Doo-Sabin, and set its weights. *Sharp* sets `w1=-1, w2=-2`; *Copy → next / all* duplicates a step. *Overview* shows every weight as bars across iterations.
 - **View & export**: *diagonal* looks down the cube's body diagonal like the paper. Export **OBJ / PLY** (quads kept) or **STL** (triangulated) to `exports/`; *Screenshot* writes to `renders/`.
+- **Section view (see inside)**: *cut the view open* hides everything on one side of a plane, so you can keep editing while looking inside.
+  - Pick the plane (*X / Y / Z*), slide its *position*, or *Flip* to keep the other half.
+  - *drag in the view* shows a handle to move or tilt the plane with the mouse.
+  - *Face the cut* points the camera at the cut face.
+  - It works on the form and on the print model, and screenshots and turntables are cut too.
 - Ctrl+click any slider to type an exact value. Hover a control for its explanation.
 - Pinkish surfaces are **back faces**: the surface has folded through itself.
 
@@ -163,6 +170,23 @@ If anything unexpected goes wrong, the app logs it to `app_errors.log` and shows
 ![Tiling](renders/panel_tiling.png)
 *Four copies of `panel_tile` side by side: the locked boundary makes the seams line up.*
 
+### Vessel: lithophane sphere
+
+The **Vessel (lithophane sphere)** panel turns the form into the inside of a thin shell (our extension):
+- **Outside**: an exact, smooth sphere of the chosen *diameter (mm)*.
+- **Inside**: the subdivision relief.
+  - Where the relief rises, the wall is thin (*thinnest wall*) and glows when lit from inside.
+  - Where it sinks, the wall is thick (*thickest wall*) and dark.
+- **Opening**: an exact, flat circle with a solid *rim wall*. The vessel prints upside down standing on it, so the dome comes out smooth.
+- **Tuning the light pattern**:
+  - *contrast*: how much of the relief's range spreads over the wall band.
+  - *relief scale*: how large a shape still counts as relief.
+  - *invert light*: swap bright and dark.
+- **Light preview** (or *Colour by → light through the wall*): bright = thin. Use the **Section view** to see the relief itself.
+- **Printing**: the Print panel exports the vessel **exactly**, with no voxel remesh, so the sphere stays perfect. It is set upside down (*-Y up*) and sized by the vessel's diameter.
+  - An opening of 35° or more needs no support outside.
+- **Preset**: `presets/lithophane_sphere.json`. A Doo-Sabin step, fBm-varied extrusions and a Worley vein network give a glowing vein pattern over dark cells. At 120 mm it is about 95 g of PLA and a 32 MB STL.
+
 ### Weight cheat-sheet (relative extrusion: 1.0 = one local edge length)
 
 | Weight | Equation | Effect |
@@ -229,6 +253,11 @@ The suite checks:
   - *facing +y* masks leave downward-facing vertices untouched.
   - The cage base is a closed genus-5 frame, and *clamp to box* flattens the outside.
   - The cube cage preset prints as 4 single-piece quarters, each lying on a flat face.
+  - **Vessel**:
+    - The open sphere base has one circular opening.
+    - The vessel is a closed, outward-oriented shell: exact sphere outside, walls within the requested band, a flat rim.
+    - Thinner walls light up brighter, and presets round-trip.
+    - The exact print stands on its rim, verifies watertight, and needs almost no support.
   - A full disk is refused cleanly (no partial file), writes are atomic, and the worker process runs.
 - **Turntable**: GIF frames orbit (skipped without OpenGL).
 - Affine and scale invariance, caching, the face budget, JSON round-trips, and that every preset loads.
@@ -241,6 +270,8 @@ ui_attractors.py    Attractors panel (gizmo, curves, falloff, sets, modifiers)
 ui_layers.py        Function layers panel
 ui_intrinsic.py     Groups / motifs / measures / merging panels (click-to-tag picking)
 ui_print.py         Print (FDM) and Turntable panels
+ui_vessel.py        Vessel (lithophane sphere) panel
+ui_section.py       Section view (cutting plane)
 ui_common.py        shared UI widgets
 render.py           headless preset → PNG
 hansmeyer/
@@ -249,14 +280,15 @@ hansmeyer/
   doo_sabin.py      extended DS (eq. 5–6)
   schedule.py       weight definitions, per-iteration schedule, Design (= preset JSON)
   pipeline.py       runs a Design: caching, face budget, boundary fade
-  shapes.py         base mesh registry (Platonic solids, columns, panel, OBJ)
+  shapes.py         base mesh registry (Platonic solids, columns, panel, cage, open sphere, OBJ)
   attractors.py     eq. 8-9 weight sets, modifiers, falloffs, curves, distances
   functions.py      field / fold registry, built-ins, plug-in loader (@field, @fold)
   noise.py          vectorised Perlin, fBm, ridged, warped, Worley
   layers.py         function layer stack (weights, displacement, folds)
   intrinsic.py      groups & locks, motifs (eq. 10-11), measures & rules
   merge.py          vertex merging / porosity
-  printprep.py      watertight voxel remesh for FDM printing (+ thin-feature check)
+  printprep.py      watertight voxel remesh for FDM printing (+ thin-feature check), exact export for vessels
+  vessel.py         thin-walled lithophane sphere: exact outer sphere, relief inside, flat rim
   meshio.py         OBJ import + cleanup; OBJ / STL / PLY export
   view.py           shared rendering style and dark/light themes
 presets/            JSON designs
