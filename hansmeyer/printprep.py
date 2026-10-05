@@ -520,6 +520,16 @@ def _shells(A, V, F) -> int:
     return int(max((vol > 0).sum(), 1))
 
 
+def _settle(V: np.ndarray, voxel: float) -> None:
+    """If the part rests on a flat face, lift the few rim vertices that smoothing pushed a hair below
+    it, so the whole face (not one stray vertex) sits on the build plate."""
+    z = V[:, 2]
+    near = z < z.min() + 0.5 * voxel
+    vals, counts = np.unique(np.round(z[near], 4), return_counts=True)
+    if len(counts) and counts.max() >= 20:
+        V[:, 2] = np.maximum(z, vals[np.argmax(counts)])
+
+
 def _layout(sizes, gap: float = 10.0) -> list[np.ndarray]:
     """xy offsets placing footprints (w, d) in a near-square grid, centred on the origin."""
     n = len(sizes)
@@ -641,6 +651,7 @@ def prepare(mesh: PolyMesh, s: PrintSettings, progress=None) -> PrintResult:
             up = best_up(Va, F, 45.0, vn)
         R = up_rotation(up)
         Vp = Va @ R.T
+        _settle(Vp, voxel)
         t = -np.array([0.5 * (Vp[:, 0].min() + Vp[:, 0].max()), 0.5 * (Vp[:, 1].min() + Vp[:, 1].max()),
                        Vp[:, 2].min()])
         Vp += t

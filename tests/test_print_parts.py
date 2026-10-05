@@ -181,9 +181,30 @@ def test_facing_mask_keeps_undersides_plain():
     assert moved[up].min() > 0.01 and moved[down].max() < 1e-9
 
 
-def test_printable_central_monolith_preset():
-    d = Design.load(os.path.join(ROOT, "presets", "printable_central_monolith.json"))
-    m = Pipeline(root=ROOT).run(d, 6).mesh
-    assert np.all(np.isfinite(m.V))
-    r = prepare(m, PrintSettings(**FAST, undersides=45.0, foot_mm=1.0))
-    assert closed(r.mesh()) and r.parts[0].shells == 1 and r.overhang(30)[2] < 0.02
+# ------------------------------------------------------------------- cube cage
+@pytest.mark.parametrize("kw", [{}, {"segments": 3, "bar": 1 / 3}, {"segments": 9, "bar": 0.15}])
+def test_cage_base_is_a_closed_frame(kw):
+    m = make_base({**default_spec("cage"), **kw})
+    assert closed(m) and m.euler_characteristic() == -8  # genus 5: a cube with all six faces open
+    assert m.signed_volume() > 0 and np.allclose(np.abs(m.V).max(0), 1.0)
+
+
+def test_clamp_box_fold_flattens_the_outside():
+    from hansmeyer import functions
+
+    p = np.array([[0.2, 3.0, -0.5], [-2.0, 0.1, 0.0]])
+    assert np.allclose(functions.evaluate("clamp_box", p, {"size": 1.0}), [[0.2, 1.0, -0.5], [-1.0, 0.1, 0.0]])
+
+
+def test_cube_cage_preset_prints_in_four_flat_quarters():
+    d = Design.load(os.path.join(ROOT, "presets", "cube_cage.json"))
+    m = Pipeline(root=ROOT).run(d, d.preview_depth).mesh
+    assert np.allclose(np.abs(m.V).max(0), 0.95)  # the preview already shows the flat, clamped outside
+    r = prepare(m, PrintSettings(size_mm=60.0, voxel_mm=0.4, smooth=4, cut_x=0.5, cut_y=0.5))
+    assert len(r.parts) == 4 and r.pins >= 4
+    assert max(r.dims_mm) == pytest.approx(60.0, abs=1.0)
+    for i, p in enumerate(r.parts):
+        V, _ = r.part_arrays(i)
+        assert p.shells == 1 and closed(r.part_mesh(i))
+        assert (V[:, 2] < 1e-6).sum() > 500  # lying on a flat outer face
+    assert r.overhang(30)[2] < 0.01

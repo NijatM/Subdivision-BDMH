@@ -81,7 +81,7 @@ Mathematical fields and folds layered on top of Hansmeyer's process, in the **Fu
   - **TPMS**: gyroid, Schwarz P, Schwarz D, Neovius.
   - **Noise**: Perlin, fBm, ridged, domain-warped, Worley cells or borders.
   - **Analytic**: constant (with a mask, a plain weight or relief boost just where the mask is), spherical harmonics, superformula, superquadric, k-fold rose with twist.
-  - **Folds**: box, sphere, kaleidoscopic mirror, Mandelbox step.
+  - **Folds**: box, sphere, kaleidoscopic mirror, Mandelbox step, clamp to box (flat, cut-like outer faces).
 - **Per layer:**
   - amplitude and offset.
   - iteration range.
@@ -124,7 +124,7 @@ The panel is laid out top to bottom:
 - **Undersides:**
   - **Self-supporting undersides** fills below every overhang with a smooth keel no flatter than the angle (default 45°). The print then needs almost no support.
     - Upward-facing surfaces keep all their detail, and horizontal holes get pointed (teardrop) tops.
-    - It adds material: about 2× the volume on the monolith.
+    - It adds material, sometimes doubling the volume of forms with large overhangs.
     - Set the slicer's threshold angle below the keel angle.
   - **Flat foot** trims the bottom flat, so the print stands on a face instead of a point.
 - **Cut into parts:** *Whole*, *2 halves* (a horizontal cut at the widest section), *4 quarters* (two vertical cuts: four pillars, like the corners of a cage) or *8 pieces*. You can also tick each cut and move it.
@@ -139,14 +139,14 @@ The panel is laid out top to bottom:
 - **View:** *Print layout* (parts side by side on the plate) or *Assembled*, with an explode gap. Colour by *needs support*, *too thin* or *parts*.
 - **Export print STLs** writes one verified STL per part (`…_part1of4_left-front.stl`, …). Load them all into the slicer together.
 
-**Printable central monolith** (`presets/printable_central_monolith.json`) is a design made for this. It is the six-arm 3D cross, sized to sit trapped in the centre of a cube cage.
-- Iterations 5–8 add detail only on upward-facing surfaces (layers masked *facing +y*):
-  - fBm-varied extrusion,
-  - alternating ridges and grooves,
-  - a swell,
-  - Worley cells.
-- Asymmetry comes from a ribbed arm, a sunken pocket and a raised bridge curve across the top. Vertex merging welds touching folds into loops.
-- To print it: model Y up, *self-supporting undersides* at 45°, a 1–2 mm flat foot and *mesh detail: half* (≈50 MB instead of ≈220 MB at 150 mm). Set *Size → longest side* to fit your cage.
+**Cube cage** (`presets/cube_cage.json`): a cube frame with flat outer faces and organic openings, printed in 4 quarters.
+- It starts from the **Cube cage (frame)** base shape: 12 bars, all six faces open. *bar width* and *segments* are in the Base mesh panel.
+- Subdivision makes the bars swell, ridge and bead.
+  - fBm noise and three *lens* attractors make some bars bulge into the openings while others stay slim.
+  - Worley cells texture the inside.
+- A final **Clamp to box** fold flattens everything beyond the cube onto its faces, so the outer faces are flat like a cut block.
+- To print it: *Cut into parts → 4 quarters*. Each quarter lies flat on an outer face, needs almost no support, and has pin holes at the joints, so the cage can be assembled around something placed inside.
+  - At 150 mm it is about 620 cm³ (≈370 g PLA at 20% infill). A smaller *bar width* or size makes it lighter.
 
 **Why a whole Fig. 3 form gets support everywhere:** its arms stick out sideways, so their undersides are near-horizontal overhangs at any threshold angle. The form also stands on a single arm tip.
 - The mesh is fine: shrink-wrapping it changes nothing.
@@ -227,7 +227,8 @@ The suite checks:
   - The support threshold angle follows slicer conventions (higher = more support).
   - Self-supporting undersides keep every layer within the slicer's angle of the one below and only ever add material. The flat foot is flat.
   - *facing +y* masks leave downward-facing vertices untouched.
-  - The monolith preset prepares to one solid piece that needs almost no support.
+  - The cage base is a closed genus-5 frame, and *clamp to box* flattens the outside.
+  - The cube cage preset prints as 4 single-piece quarters, each lying on a flat face.
   - A full disk is refused cleanly (no partial file), writes are atomic, and the worker process runs.
 - **Turntable**: GIF frames orbit (skipped without OpenGL).
 - Affine and scale invariance, caching, the face budget, JSON round-trips, and that every preset loads.

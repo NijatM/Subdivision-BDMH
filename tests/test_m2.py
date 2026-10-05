@@ -23,11 +23,12 @@ def rand_weights(rng, scale=0.3):
 @pytest.mark.parametrize("name", CLOSED)
 def test_closed_shapes_are_valid_solids(name):
     m = make_base(default_spec(name))
+    chi = -8 if name == "cage" else 2  # the cage is a frame with six openings (genus 5)
     assert np.all(m.he_twin >= 0), "closed"
-    assert m.euler_characteristic() == 2
+    assert m.euler_characteristic() == chi
     assert m.signed_volume() > 0, "outward oriented"
     m2 = catmull_clark.subdivide(m, {})
-    assert m2.euler_characteristic() == 2 and m2.signed_volume() > 0
+    assert m2.euler_characteristic() == chi and m2.signed_volume() > 0
 
 
 @pytest.mark.parametrize(

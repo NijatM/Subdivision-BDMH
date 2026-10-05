@@ -1,0 +1,176 @@
+{
+  "name": "Cube cage",
+  "description": "A cube frame (the 'cage' base: 12 bars, all six faces open) sculpted by subdivision. The bars swell, ridge and bead; fBm noise and three 'lens' attractors make some bars bulge into the openings while others stay slim; Worley cells texture the inside. A final 'clamp to box' fold flattens everything beyond the cube onto its faces: flat outer faces like a cut block, organic openings. Print it in 4 quarters (Print panel: Cut into parts, 4 quarters): each lies flat on an outer face, needs almost no support, and has pin holes at the joints, so the cage can be assembled around something placed inside.",
+  "base": {
+    "shape": "cage",
+    "size": 2.0,
+    "bar": 0.14,
+    "segments": 7
+  },
+  "extrusion": "relative",
+  "boundary": "smooth",
+  "preview_depth": 5,
+  "full_depth": 6,
+  "iterations": [
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_f": 0.22,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_f": 0.15,
+        "w_e": 0.2,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_e": -0.3,
+        "w_f": 0.1,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_f": 0.25,
+        "w_c": -0.3,
+        "w3": 1.0,
+        "w4": -1.0,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_e": 0.35,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_e": -0.25,
+        "w_f": 0.1,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    }
+  ],
+  "view": "diagonal",
+  "attractor_space": "rest",
+  "layers": [
+    {
+      "name": "irregular",
+      "target": "weight",
+      "function": "fbm",
+      "params": {
+        "frequency": 1.1,
+        "seed": 4
+      },
+      "weight": "w_f",
+      "blend": "add",
+      "amplitude": 0.8,
+      "from": 1,
+      "to": 3,
+      "space": "rest"
+    },
+    {
+      "name": "cells",
+      "target": "displacement",
+      "function": "worley",
+      "params": {
+        "mode": 1,
+        "frequency": 5.0,
+        "seed": 2
+      },
+      "amplitude": 0.3,
+      "from": 5,
+      "to": 5,
+      "space": "rest"
+    },
+    {
+      "name": "flat faces",
+      "target": "fold",
+      "function": "clamp_box",
+      "params": {
+        "size": 0.95
+      },
+      "amplitude": 1.0,
+      "from": 5,
+      "to": 6
+    }
+  ],
+  "attractors": [
+    {
+      "name": "lens front-left",
+      "kind": "point",
+      "position": [
+        -1.0,
+        0.15,
+        1.0
+      ],
+      "payload": "modifier",
+      "radius": 0.6,
+      "mods": [
+        {
+          "weight": "w_f",
+          "op": "offset",
+          "value": 0.55,
+          "from": 1,
+          "to": 2
+        }
+      ]
+    },
+    {
+      "name": "lens top",
+      "kind": "point",
+      "position": [
+        0.2,
+        1.0,
+        1.0
+      ],
+      "payload": "modifier",
+      "radius": 0.5,
+      "mods": [
+        {
+          "weight": "w_f",
+          "op": "offset",
+          "value": 0.45,
+          "from": 1,
+          "to": 2
+        }
+      ]
+    },
+    {
+      "name": "lens back-right",
+      "kind": "point",
+      "position": [
+        1.0,
+        -0.35,
+        -1.0
+      ],
+      "payload": "modifier",
+      "radius": 0.7,
+      "mods": [
+        {
+          "weight": "w_f",
+          "op": "offset",
+          "value": 0.6,
+          "from": 1,
+          "to": 2
+        }
+      ]
+    }
+  ]
+}

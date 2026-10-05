@@ -284,6 +284,13 @@ def box_fold(p, limit):
     return np.clip(p, -limit, limit) * 2 - p
 
 
+@fold("clamp_box", "Clamp to box", "fold",
+      "Flattens everything outside a box onto its faces: flat, cut-like outer faces (e.g. a cube cage).",
+      size=(0.1, 4.0, 1.0))
+def clamp_box(p, size):
+    return np.clip(p, -size, size)
+
+
 @fold("sphere_fold", "Sphere fold", "fold",
       "Mandelbox sphere fold: inverts points inside the fixed radius (scales up the core).",
       min_radius=(0.05, 2.0, 0.5), fixed_radius=(0.1, 4.0, 1.0))

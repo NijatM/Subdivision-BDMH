@@ -89,6 +89,42 @@ def cube(size: float = 2.0) -> PolyMesh:
     return PolyMesh.from_faces(V, F)
 
 
+def polycube(filled: np.ndarray, cell: float = 1.0) -> PolyMesh:
+    """Closed, outward-oriented quad surface of a set of grid cells, centred on the origin.
+    Cells must never touch only along an edge or at a corner (that would be non-manifold)."""
+    filled = np.asarray(filled, bool)
+    pad = np.pad(filled, 1)
+    quads = []
+    for a in range(3):
+        b, c = (a + 1) % 3, (a + 2) % 3  # e_b x e_c = e_a: (0,0) (1,0) (1,1) (0,1) runs counter-clockwise seen from +a
+        for sign in (1, -1):
+            exposed = (pad & ~np.roll(pad, -sign, axis=a))[1:-1, 1:-1, 1:-1]
+            cells = np.argwhere(exposed)
+            corners = [(0, 0), (1, 0), (1, 1), (0, 1)] if sign > 0 else [(0, 0), (0, 1), (1, 1), (1, 0)]
+            q = np.repeat(cells[:, None, :], 4, axis=1)
+            q[:, :, a] += 1 if sign > 0 else 0
+            for i, (db, dc) in enumerate(corners):
+                q[:, i, b] += db
+                q[:, i, c] += dc
+            quads.append(q)
+    q = np.concatenate(quads)
+    pts, idx = np.unique(q.reshape(-1, 3), axis=0, return_inverse=True)
+    V = (pts - 0.5 * np.array(filled.shape)) * cell
+    return PolyMesh.from_faces(V.astype(float), idx.reshape(-1, 4).tolist())
+
+
+def cage(size: float = 2.0, bar: float = 0.2, segments: int = 5) -> PolyMesh:
+    """A cube frame: the 12 edges of a cube as square bars, all six faces open
+    (for segments = 3 and bar = 1/3 this is the first step of a Menger sponge)."""
+    n = max(int(segments), 3)
+    band = int(min(max(round(bar * n), 1), (n - 1) // 2))
+    i = np.arange(n)
+    edge = (i < band) | (i >= n - band)
+    ex, ey, ez = np.meshgrid(edge, edge, edge, indexing="ij")
+    filled = (ex.astype(int) + ey + ez) >= 2  # on at least two outer bands = along a cube edge
+    return polycube(filled, size / n)
+
+
 def octahedron(radius: float = UNIT_RADIUS) -> PolyMesh:
     V = np.array([[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]], float) * radius
     return PolyMesh.from_faces(V, _orient_convex(V, _triangles_by_edge_length(V)))
@@ -198,6 +234,16 @@ SHAPES: dict[str, ShapeDef] = {
     s.name: s
     for s in [
         ShapeDef("cube", "Cube", cube, (Param("size", "size", 0.5, 4.0, 2.0),), "diagonal", "Paper Fig. 3 input."),
+        ShapeDef(
+            "cage", "Cube cage (frame)", cage,
+            (
+                Param("size", "size", 0.5, 4.0, 2.0),
+                Param("bar", "bar width", 0.05, 0.45, 0.2, help="Bar width as a share of the cube's side."),
+                Param("segments", "segments", 3, 15, 5, True, "Quads along each side: more = finer input mesh."),
+            ),
+            "diagonal", "The 12 edges of a cube as bars, all six faces open. Add a 'clamp to box' fold layer "
+                        "for flat outer faces.",
+        ),
         ShapeDef("tetrahedron", "Tetrahedron", tetrahedron, (_R,), "three_quarter", "Platonic solid, 4 triangles."),
         ShapeDef("octahedron", "Octahedron", octahedron, (_R,), "diagonal", "Platonic solid, 8 triangles."),
         ShapeDef("dodecahedron", "Dodecahedron", dodecahedron, (_R,), "diagonal", "Platonic solid, 12 pentagons."),
