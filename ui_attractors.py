@@ -50,7 +50,6 @@ class AttractorPanel:
         self.iter_tab = 0
         self.ctrl = 0
         self.show = True
-        self.show_influence = False
         self.import_path = ""
         self.geom_dirty = True
         self._curve_names: set[str] = set()
@@ -177,7 +176,7 @@ class AttractorPanel:
 
     def influence_values(self, mesh):
         a = self.selected()
-        if not (self.show_influence and a is not None):
+        if a is None:
             return None, None
         P = face_positions(mesh, self.design.attractor_space)
         return influence(a, P), (0.0, max(float(a["strength"]), 1e-6))
@@ -191,9 +190,10 @@ class AttractorPanel:
         if changed:
             self.geom_dirty = True
         psim.SameLine()
-        changed, self.show_influence = psim.Checkbox("influence map", self.show_influence)
+        changed, on = psim.Checkbox("influence map", self.app.color_mode == "influence")
         psim.SetItemTooltip("Colour the form by the selected attractor's influence (strength x falloff).")
         if changed:
+            self.app.color_mode = "influence" if on else "none"
             self.app.refresh_display()
 
         psim.Text("Measure at:")

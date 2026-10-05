@@ -1,0 +1,100 @@
+{
+  "name": "Layers \u2014 Worley cell tile",
+  "description": "A Worley (cell-border) displacement layer on a locked panel: a cellular relief that still tiles, because displacement fades out at the locked boundary.",
+  "base": {
+    "shape": "panel",
+    "nx": 4,
+    "ny": 4
+  },
+  "extrusion": "relative",
+  "boundary": "locked",
+  "fade_rows": 1.0,
+  "preview_depth": 5,
+  "full_depth": 7,
+  "iterations": [
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {}
+    },
+    {
+      "scheme": "cc",
+      "weights": {}
+    }
+  ],
+  "view": "three_quarter",
+  "attractor_space": "current",
+  "background": 1.0,
+  "layers": [
+    {
+      "name": "L",
+      "enabled": true,
+      "target": "displacement",
+      "function": "worley",
+      "params": {
+        "mode": 1,
+        "frequency": 2.5
+      },
+      "amplitude": 0.45,
+      "offset": 0.0,
+      "from": 3,
+      "to": 6,
+      "space": "rest"
+    }
+  ]
+}

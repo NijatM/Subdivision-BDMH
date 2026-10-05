@@ -16,6 +16,12 @@ Digital Grotesque (with Benjamin Dillenburger).
 ![Milestone 3 presets](renders/m3_presets.png)
 *Milestone 3, attractors. Left: paper Fig. 4, four weight sets along y give a base and three sections. Middle: a helix curve wraps the column in a spiral of ornament. Right: a sine-curve "river" across a tileable panel.*
 
+![Milestone 4 presets](renders/m4_presets.png)
+*Milestone 4, function layers: gyroid coral column, twisted rose flutes, Worley cell tile, Mandelbox-folded gyroid.*
+
+![Milestone 5 presets](renders/m5_presets.png)
+*Milestone 5, the paper's intrinsic features. Fig. 9 locked edges (sharp creases), Fig. 7 motif-driven column, Fig. 8 topological distance, porosity by vertex merging.*
+
 ## Run it
 
 | | First run (installs everything into a local `.venv`) | Afterwards |
@@ -64,6 +70,36 @@ Attractors make weights vary **in space**, the paper's *extrinsic specification 
   - *original* uses where the face sat on the input mesh, which gives stable zoning.
 - **influence map** colours the form by the selected attractor's influence.
 
+### Function layers (our extension)
+
+Mathematical fields and folds layered on top of Hansmeyer's process, in the **Function layers** panel:
+
+- **+ Weight field**: a field drives one weight per face (`w_f`, `w_e`, …) before an iteration. The blend can be add, multiply, replace, min or max.
+- **+ Displacement**: moves vertices along their normals after an iteration (adds relief directly).
+- **+ Fold**: deforms the whole mesh with a fold map after an iteration.
+- **Built-in families:**
+  - **TPMS**: gyroid, Schwarz P, Schwarz D, Neovius.
+  - **Noise**: Perlin, fBm, ridged, domain-warped, Worley cells or borders.
+  - **Analytic**: spherical harmonics, superformula, superquadric, k-fold rose with twist.
+  - **Folds**: box, sphere, kaleidoscopic mirror, Mandelbox step.
+- **Per layer:**
+  - amplitude and offset.
+  - iteration range.
+  - **evaluate at** *original* positions (the pattern sticks to the form like a texture) or *current* positions (the form grows through a fixed pattern).
+  - **mask** by an attractor's reach.
+  - **domain fold**: repeat a fold on the field's input, e.g. Mandelbox × 3 with c = 1, for fractal ornament.
+- **Plug-ins**: drop a `.py` file into `functions/` with an `@field` or `@fold` function, then press *Reload plug-ins*. Sliders are generated from its parameters. See [`functions/README.md`](functions/README.md) and the examples `ripples.py` and `twist.py`.
+
+### The paper's intrinsic features
+
+- **Groups (Fig. 9)**: *+ Group*, then *Click to tag* faces or vertices on the input mesh, or *Select by rule* (facing direction, height band, every k-th, motif).
+  - Each group gets **weight rules**.
+  - **Lock iterations** hold its vertices in place, so locked edges stay sharp creases and locked points become spikes. Tags pass to every child face.
+- **Motifs (Fig. 6–7, eq. 10–11)**: every motif found on the input (e.g. `3F3E`, `4F4E`) gets an attractor/deflector value **U**. The schedule's **w6** and **w7** pull face and edge points toward (+) or away from (−) those vertices.
+- **Measure rules (Fig. 8 + curvature)**: distance to original vertices, distance to original edges, planarity, or bend gives a per-face *t* in [0, 1]. A rule sets, scales or offsets a weight from *at 0* to *at 1*.
+- **Vertex merging / porosity**: welds vertices of *different* parts of the surface that grow into contact (pairwise, within a fraction of the local edge length). Where a welded vertex would exceed the **max valence**, faces aren't formed, which opens holes and handles. The Euler characteristic is shown.
+- **Colour by** (View & export): attractor influence, the selected layer's field, group tags, or any measure. It shows where things act.
+
 ![Tiling](renders/panel_tiling.png)
 *Four copies of `panel_tile` side by side: the locked boundary makes the seams line up.*
 
@@ -108,13 +144,27 @@ The suite checks:
   - Falloff shapes, curve geometry, curve distance (exact and fast, with a tested error bound) and polyline import.
   - Rest vs current positions.
   - Per-iteration cache invalidation: editing iteration k recomputes only from k.
+- **Function layers**:
+  - Every built-in field and fold is bounded, finite and deterministic. The gyroid formula, Perlin continuity, Worley F1 ≤ F2, kaleidoscope wedges and SH symmetry are checked.
+  - The five blend modes, iteration ranges, attractor masks, displacement and fold amounts, and per-level caching.
+  - Plug-in loading, errors and reloading.
+- **Intrinsic features**:
+  - Motif labels (CC adds exactly `4F4E`).
+  - eq. 10 and 11 numerically.
+  - Topological distances (Fig. 8), planarity and bend.
+  - Rules, tag inheritance through CC and DS, rule-based selection.
+  - **Locked edges stay straight creases** (Fig. 9) and release after L iterations.
+- **Merging**: pairwise only; topological neighbours are never welded; the max valence opens holes; the result stays manifold and can be subdivided further.
 - Affine and scale invariance, caching, the face budget, JSON round-trips, and that every preset loads.
 
 ## Layout
 
 ```
 app.py              interactive Polyscope app
-ui_attractors.py    the app's Attractors panel (gizmo, curves, falloff, sets, modifiers)
+ui_attractors.py    Attractors panel (gizmo, curves, falloff, sets, modifiers)
+ui_layers.py        Function layers panel
+ui_intrinsic.py     Groups / motifs / measures / merging panels (click-to-tag picking)
+ui_common.py        shared UI widgets
 render.py           headless preset → PNG
 hansmeyer/
   mesh.py           polygon mesh, vectorised half-edges, normals, per-vertex attributes
@@ -124,16 +174,27 @@ hansmeyer/
   pipeline.py       runs a Design: caching, face budget, boundary fade
   shapes.py         base mesh registry (Platonic solids, columns, panel, OBJ)
   attractors.py     eq. 8-9 weight sets, modifiers, falloffs, curves, distances
+  functions.py      field / fold registry, built-ins, plug-in loader (@field, @fold)
+  noise.py          vectorised Perlin, fBm, ridged, warped, Worley
+  layers.py         function layer stack (weights, displacement, folds)
+  intrinsic.py      groups & locks, motifs (eq. 10-11), measures & rules
+  merge.py          vertex merging / porosity
   meshio.py         OBJ import + cleanup; OBJ / STL / PLY export
   view.py           shared rendering style and dark/light themes
 presets/            JSON designs
+functions/          your plug-in functions (examples included)
 inputs/             drop .obj meshes / curve files here (samples included)
 tests/              pytest suite + independent reference implementation
 ```
 
 ## Faithfulness to the paper
 
-- **From the paper:** eq. 1–6, non-stationary weights, the CC + DS combination, provenance (corner/edge/face points; face/edge/vertex-derived faces), the Fig. 4 / Fig. 7 column inputs, and **eq. 8–9 extrinsic weight sets** (Fig. 4 zoning, Fig. 5 planar or spatial sets).
+- **From the paper:**
+  - eq. 1–6, non-stationary weights, the CC + DS combination, and provenance (corner/edge/face points; face/edge/vertex-derived faces).
+  - The Fig. 4 / Fig. 7 column inputs.
+  - **eq. 8–9 extrinsic weight sets** (Fig. 4 zoning, Fig. 5 planar or spatial sets).
+  - **Intrinsic parameters:** topological motifs with attractor/deflector values (**eq. 10–11**), topological distance (**Fig. 8**), planarity, tagging and **locking** (**Fig. 9**).
+  - **Vertex merging with a maximum valence** (porosity).
 - **Our extensions (labelled in code):**
   - Eq. 1/3 applied to n-gons and any valence.
   - A Doo-Sabin `w1` generalisation for n ≠ 3, 4.
@@ -145,6 +206,9 @@ tests/              pytest suite + independent reference implementation
     - Modifier attractors.
     - The background set.
     - The current/original measuring position.
+  - The whole function layer stack (TPMS, noise, analytic fields, folds, plug-ins).
+  - The bend measure.
+  - Merging details. The paper only says proximate vertices are joined and faces can't form beyond the max valence. We weld *pairs* of vertices that don't share a face, within a fraction of the local edge length, and drop the faces that would break manifoldness.
 - **Fig. 3:** the paper publishes no weight values, so the presets reproduce the *character* of the figures, not exact geometry. The left figure's arms are there, but its fluted fans at the arm tips aren't yet.
 - **Fig. 4:** reproduced in character by `column_fig4_zoned`: four weight sets along y, a base and three sections with gradients. Again, the paper gives no weight values.
 
@@ -153,6 +217,6 @@ tests/              pytest suite + independent reference implementation
 1. ✅ Core engine, tests, minimal viewer, Fig. 3 presets
 2. ✅ Dark/light theme, Platonic solids, columns (Fig. 4/7), open panel with smooth/locked boundaries, OBJ import, OBJ/STL/PLY export, schedule overview
 3. ✅ Attractors (points and space curves, falloff curves, weight sets and modifiers, gizmo dragging, influence map)
-4. Function layer stack (TPMS, noise, analytic, folds) and a `functions/` plug-in folder
-5. Tagging/locking, intrinsic motifs, topological distance and curvature, vertex merging (porosity)
+4. ✅ Function layer stack (TPMS, noise, analytic, folds, domain folds) and a `functions/` plug-in folder
+5. ✅ Tagging/locking (Fig. 9), motifs (eq. 10–11, Fig. 7), topological distance (Fig. 8) and curvature, vertex merging (porosity), colour-by maps
 6. Watertight voxel remesh for FDM printing, turntable GIF/MP4

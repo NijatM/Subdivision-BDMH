@@ -44,6 +44,8 @@ class PolyMesh:
     vtype: np.ndarray = field(default=None)  # (N,) int8 provenance
     fclass: np.ndarray = field(default=None)  # (F,) int8 provenance
     vattr: dict = field(default_factory=dict)  # per-vertex attributes carried through subdivision
+    fattr: dict = field(default_factory=dict)  # per-face attributes (e.g. group tag bits), inherited by child faces
+    info: dict = field(default_factory=dict)  # per-level notes (e.g. merge statistics)
 
     def __post_init__(self):
         self.V = np.ascontiguousarray(self.V, dtype=np.float64)
@@ -54,6 +56,7 @@ class PolyMesh:
         if self.fclass is None:
             self.fclass = np.full(self.n_faces, FCLASS_BASE, dtype=np.int8)
         self.vattr = {k: np.asarray(v, dtype=float) for k, v in self.vattr.items()}
+        self.fattr = {k: np.asarray(v) for k, v in self.fattr.items()}
 
     # ------------------------------------------------------------------ build
     @classmethod
@@ -196,9 +199,13 @@ class PolyMesh:
 
     def boundary_distance(self) -> np.ndarray:
         """Edge-hop distance from each vertex to the nearest boundary vertex (inf on closed meshes)."""
+        return self.hop_distance(self.vert_is_boundary)
+
+    def hop_distance(self, seeds: np.ndarray) -> np.ndarray:
+        """Edge-hop (topological) distance from each vertex to the nearest seed vertex."""
         dist = np.full(self.n_verts, np.inf)
-        dist[self.vert_is_boundary] = 0.0
-        if not np.any(self.vert_is_boundary):
+        dist[np.asarray(seeds, bool)] = 0.0
+        if not np.any(seeds):
             return dist
         a, b = self.edge_verts[:, 0], self.edge_verts[:, 1]
         while True:
@@ -268,6 +275,28 @@ class PolyMesh:
         np.add.at(acc, self.he_from, per_face[self.he_face])
         cnt = np.maximum(self.vert_face_count, 1).reshape((-1,) + (1,) * (per_face.ndim - 1))
         return acc / cnt
+
+    def motif_codes(self) -> np.ndarray:
+        """Vertex motif (paper Fig. 6) encoded as faces*100 + edges, e.g. 404 = "4F4E"."""
+        return self.vert_face_count * 100 + self.valence
+
+    @cached_property
+    def face_planarity(self) -> np.ndarray:
+        """Largest distance of a face's vertices from its mean plane, relative to the face size (0 = planar)."""
+        d = np.abs(np.einsum("ij,ij->i", self.V[self.he_from] - self.face_centroid[self.he_face],
+                             self.face_normal[self.he_face]))
+        return np.maximum.reduceat(d, self.face_ptr[:-1]) / np.maximum(self.face_scale, _EPS)
+
+    @cached_property
+    def face_bend(self) -> np.ndarray:
+        """Mean (1 - cos) of the dihedral angles to neighbouring faces: 0 = flat, 1 = folded at 90 deg."""
+        tw = self.he_twin
+        has = tw >= 0
+        n = self.face_normal
+        val = np.zeros(self.n_halfedges)
+        val[has] = 1.0 - np.einsum("ij,ij->i", n[self.he_face[has]], n[self.he_face[tw[has]]])
+        cnt = np.add.reduceat(has.astype(float), self.face_ptr[:-1])
+        return np.add.reduceat(val, self.face_ptr[:-1]) / np.maximum(cnt, 1)
 
     def signed_volume(self) -> float:
         """Divergence-theorem volume; positive for a closed, outward-oriented mesh."""

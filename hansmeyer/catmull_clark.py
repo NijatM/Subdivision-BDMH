@@ -11,6 +11,12 @@ plain midpoints without extrusion, so the boundary polyline never changes and
 identical open panels tile seamlessly. ``vmask`` (per-vertex, 0..1) scales all
 extrusion — used to fade relief out towards a locked boundary.
 
+Locking (paper Fig. 9): vertices in ``vlock`` keep their position; an edge with both
+ends locked gets its plain midpoint and a face with all corners locked its centroid,
+so locked edges stay sharp creases. Motif attraction (eq. 10-11): with a per-vertex
+attractor/deflector value ``vU``, face and edge points are pulled toward (U > 0) or
+pushed away from (U < 0) their vertices, scaled by w6 / w7.
+
 Extension beyond the paper: eq. 1 and 3 are applied to n-gons and arbitrary
 valence (the paper states them for quads); eq. 4 applies to quads that have the
 corner/edge/face/edge provenance pattern produced by a previous CC step.
@@ -59,10 +65,18 @@ def subdivide(
     relative: bool = True,
     lock_boundary: bool = False,
     vmask: np.ndarray | None = None,
+    vlock: np.ndarray | None = None,
+    vU: np.ndarray | None = None,
 ) -> PolyMesh:
     N, E, F = m.n_verts, m.n_edges, m.n_faces
     V = m.V
     ev = m.edge_verts
+    if vlock is not None and not np.any(vlock):
+        vlock = None
+    if vlock is not None:
+        vlock = np.asarray(vlock, bool)
+        lock_e = vlock[ev[:, 0]] & vlock[ev[:, 1]]
+        lock_f = np.minimum.reduceat(vlock[m.face_idx].astype(np.int8), m.face_ptr[:-1]).astype(bool)
     if vmask is None:
         mask_f = mask_e = mask_v = None
     else:
@@ -83,6 +97,8 @@ def subdivide(
     if np.any(w_f):
         amount = w_f * scale_f if mask_f is None else w_f * scale_f * mask_f
         Fp += m.face_normal * amount[:, None]
+    if vlock is not None:
+        Fp[lock_f] = m.face_centroid[lock_f]
 
     # ---- eq. 2: edge points
     ef = m.edge_faces
@@ -100,6 +116,8 @@ def subdivide(
         if lock_boundary:
             amount = np.where(inner, amount, 0.0)
         Ep += m.edge_normal * amount[:, None]
+    if vlock is not None:
+        Ep[lock_e] = 0.5 * (Pa[lock_e] + Pb[lock_e])  # locked edges stay straight creases
 
     # ---- eq. 3: corner points
     val = m.valence.astype(float)
@@ -134,6 +152,25 @@ def subdivide(
         if lock_boundary:
             amount = np.where(bnd, 0.0, amount)
         Cp += m.vert_normal * amount[:, None]
+    if vlock is not None:
+        Cp[vlock] = V[vlock]
+
+    # ---- eq. 10 / 11: motif attraction, applied after eq. 1-2
+    if vU is not None:
+        U = np.asarray(vU, float)
+        w6 = _per_face(W, "w6", F)
+        w7 = m.edge_mean(_per_face(W, "w7", F))
+        if np.any(w6):
+            pull = m.face_reduce((V[m.he_from] - Fp[m.he_face]) * U[m.he_from][:, None])
+            att = w6[:, None] * pull
+            if vlock is not None:
+                att[lock_f] = 0.0
+            Fp = Fp + att
+        if np.any(w7):
+            att = w7[:, None] * ((Pa - Ep) * U[ev[:, 0]][:, None] + (Pb - Ep) * U[ev[:, 1]][:, None])
+            if vlock is not None:
+                att[lock_e] = 0.0
+            Ep = Ep + att
 
     # ---- topology: one quad per half-edge
     h = np.arange(m.n_halfedges)
@@ -152,14 +189,27 @@ def subdivide(
         quads.reshape(-1),
         vtype=vtype,
         fclass=np.full(H, FCLASS_CC, dtype=np.int8),
-        vattr={k: propagate_attr(m, a) for k, a in m.vattr.items()},
+        vattr={k: propagate_attr(m, a, k) for k, a in m.vattr.items()},
+        fattr={k: a[m.he_face] for k, a in m.fattr.items()},  # each child quad inherits its parent face
     )
 
 
-def propagate_attr(m: PolyMesh, a: np.ndarray) -> np.ndarray:
+def propagate_attr(m: PolyMesh, a: np.ndarray, name: str = "") -> np.ndarray:
     """Carry a per-vertex attribute to the next level by plain (unweighted) averaging:
-    corners keep their value, edge points take the endpoint mean, face points the face mean."""
+    corners keep their value, edge points take the endpoint mean, face points the face mean.
+
+    Special attributes: "tv" (original vertex) only survives on corners; "te" (on an
+    original edge) also on edge points of such edges; "lock" (iterations to stay
+    locked) passes to edge/face points only if all their parents are locked."""
     ev = m.edge_verts
+    if name == "tv":
+        return np.concatenate([a, np.zeros(m.n_edges), np.zeros(m.n_faces)])
+    if name == "te":
+        return np.concatenate([a, a[ev[:, 0]] * a[ev[:, 1]], np.zeros(m.n_faces)])
+    if name == "lock":
+        edge = np.where((a[ev[:, 0]] > 0) & (a[ev[:, 1]] > 0), np.minimum(a[ev[:, 0]], a[ev[:, 1]]), 0.0)
+        face = np.minimum.reduceat(a[m.face_idx], m.face_ptr[:-1])
+        return np.concatenate([a, edge, face])
     shape = (-1,) + (1,) * (a.ndim - 1)
     edge = 0.5 * (a[ev[:, 0]] + a[ev[:, 1]])
     face = m.face_reduce(a[m.face_idx]) / m.face_size.reshape(shape)

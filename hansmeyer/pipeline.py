@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from . import attractors, catmull_clark, doo_sabin
+from . import attractors, catmull_clark, doo_sabin, intrinsic, layers, merge
 from .mesh import PolyMesh
 from .schedule import Design
 from .shapes import make_base
@@ -29,6 +29,20 @@ def boundary_fade(dist: np.ndarray, rows: float) -> np.ndarray:
 def uniform_weights(mesh: PolyMesh, level: int, spec) -> dict:
     """Weight provider for uniform (per-iteration only) weights."""
     return spec.weights
+
+
+def make_provider(design):
+    """The design's weights for one iteration: the iteration's schedule, then attractors (eq. 8-9),
+    group rules, intrinsic rules and function layers, each refining the previous result."""
+    att = attractors.make_provider(design)
+
+    def provider(mesh, level, spec):
+        W = att(mesh, level, spec)
+        W = intrinsic.apply_group_rules(design, mesh, level, W)
+        W = intrinsic.apply_rules(design, mesh, level, W)
+        return layers.apply_weight_layers(design, mesh, level, W)
+
+    return provider
 
 
 @dataclass
@@ -70,6 +84,7 @@ class Pipeline:
         if mesh is None:
             mesh = make_base(design.base, self.root)
             mesh.vattr["rest"] = mesh.V.copy()  # input-mesh position, carried through subdivision
+            intrinsic.decorate_base(design, mesh)  # tags, locks, original vertex/edge markers
             if design.boundary == "locked":
                 mesh.vattr["bdist"] = mesh.boundary_distance()
             self._put(key, mesh)
@@ -79,7 +94,7 @@ class Pipeline:
         """weight_provider(mesh, level, spec) -> weights; default: the design's attractor field."""
         t0 = time.perf_counter()
         if weight_provider is None:
-            weight_provider = attractors.make_provider(design)
+            weight_provider = make_provider(design)
         mesh = self.base(design)
         relative = design.extrusion == "relative"
         lock = design.boundary == "locked"
@@ -97,9 +112,16 @@ class Pipeline:
             vmask = None
             if lock and "bdist" in mesh.vattr and np.isfinite(mesh.vattr["bdist"]).any():
                 vmask = boundary_fade(mesh.vattr["bdist"], design.fade_rows)
+            vlock = mesh.vattr["lock"] > level if "lock" in mesh.vattr else None
+            vU = intrinsic.motif_U(design, mesh) if spec.scheme == "cc" else None
             mesh = module.subdivide(
-                mesh, weight_provider(mesh, level, spec), relative=relative, lock_boundary=lock, vmask=vmask
+                mesh, weight_provider(mesh, level, spec), relative=relative, lock_boundary=lock, vmask=vmask,
+                vlock=vlock, vU=vU,
             )
+            if lock and "bdist" in mesh.vattr:
+                vmask = boundary_fade(mesh.vattr["bdist"], design.fade_rows)
+            mesh = layers.post_process(design, mesh, level, relative, vmask)
+            mesh = merge.maybe_merge(design, mesh, level)
             self._put(key, mesh)
             reached = level + 1
         return RunResult(mesh, reached, depth, capped, time.perf_counter() - t0, hits)

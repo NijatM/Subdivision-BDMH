@@ -1,0 +1,94 @@
+{
+  "name": "Fig. 8 \u2014 topological distance",
+  "description": "Paper Fig. 8: w_f is set by each face's edge-hop distance to the original cube edges (-0.3 on the edges to +0.5 far from them). Colour by 'distance to original edges' to see the measure.",
+  "base": {
+    "shape": "cube"
+  },
+  "extrusion": "relative",
+  "boundary": "smooth",
+  "fade_rows": 2.0,
+  "preview_depth": 5,
+  "full_depth": 7,
+  "iterations": [
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {}
+    },
+    {
+      "scheme": "cc",
+      "weights": {}
+    }
+  ],
+  "view": "diagonal",
+  "attractor_space": "current",
+  "background": 1.0,
+  "intrinsic": [
+    {
+      "enabled": true,
+      "measure": "dist_edge",
+      "weight": "w_f",
+      "op": "set",
+      "a": -0.3,
+      "b": 0.5,
+      "gamma": 1.0,
+      "from": 2,
+      "to": 6
+    }
+  ]
+}

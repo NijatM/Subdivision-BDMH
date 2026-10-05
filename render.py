@@ -12,7 +12,7 @@ import os
 import numpy as np
 import polyscope as ps
 
-from hansmeyer import Design, Pipeline
+from hansmeyer import Design, Pipeline, functions
 from hansmeyer.view import THEMES, setup_scene, set_view, show_mesh, write_png
 
 
@@ -28,6 +28,9 @@ def main():
     ap.add_argument("--theme", default="dark", choices=["dark", "light"])
     args = ap.parse_args()
 
+    root = os.path.dirname(os.path.abspath(__file__))
+    for err in functions.load_plugins(os.path.join(root, "functions")):
+        print("plug-in error:", err)
     setup_scene((args.size, args.size), theme=args.theme)
     ps.set_ground_plane_mode("none")
     os.makedirs(args.out, exist_ok=True)

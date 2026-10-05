@@ -17,7 +17,11 @@ import polyscope.imgui as psim
 from hansmeyer import CC_WEIGHTS, DS_WEIGHTS, MAX_ITERATIONS, SHAPES, Design, IterationSpec, Pipeline, default_spec
 from hansmeyer.meshio import export
 from hansmeyer.view import apply_scene_theme, apply_ui_theme, set_view, setup_scene, show_mesh, write_png
+from hansmeyer import functions, intrinsic
+from hansmeyer.attractors import face_positions
 from ui_attractors import AttractorPanel
+from ui_intrinsic import IntrinsicPanel
+from ui_layers import LayerPanel
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 PRESET_DIR = os.path.join(ROOT, "presets")
@@ -88,8 +92,13 @@ class App:
             self.preset_idx = next((i for i, (_, p) in enumerate(self.presets) if p == default), 0)
             self.save_name = os.path.splitext(os.path.basename(default))[0] + "_edit"
         self.obj_path = self.design.base.get("path", "") if self.design.base.get("shape") == "obj" else ""
+        self.color_mode = "none"  # none | influence | layer | measure:<name> | tags
         self.attr_panel = AttractorPanel(self)
         self.attr_panel.reset()
+        self.layer_panel = LayerPanel(self)  # also loads functions/ plug-ins
+        self.layer_panel.reset()
+        self.intr_panel = IntrinsicPanel(self)
+        self.intr_panel.reset()
 
     # ------------------------------------------------------------------ theme
     def set_theme(self, name):
@@ -121,6 +130,8 @@ class App:
         self.save_name = name + "_edit"
         self.obj_path = self.design.base.get("path", "")
         self.attr_panel.reset()
+        self.layer_panel.reset()
+        self.intr_panel.reset()
         self.tab = 0
         self.need_view_reset = True
         self.edited()
@@ -151,7 +162,10 @@ class App:
             return False
         self.error = ""
         self.result = r
-        self.base_mesh = self.pipe.base(self.design)
+        base = self.pipe.base(self.design)
+        if base is not self.base_mesh:
+            self.intr_panel.overlay_dirty = True
+        self.base_mesh = base
         self.refresh_display()
         if self.need_view_reset:
             set_view(r.mesh, self.design.view)
@@ -160,12 +174,38 @@ class App:
             self.error = "Non-finite vertices — reduce the weights"
         return True
 
+    def color_values(self, mesh):
+        """Per-face values for the 'colour by' mode (or None)."""
+        mode = self.color_mode
+        try:
+            if mode == "influence":
+                return self.attr_panel.influence_values(mesh)
+            if mode == "layer":
+                ly = self.layer_panel.selected()
+                if ly is None or ly["target"] == "fold":
+                    return None, None
+                P = face_positions(mesh, ly["space"])
+                return functions.evaluate(ly["function"], P, ly["params"], ly["domain"]), (-1.0, 1.0)
+            if mode.startswith("measure:"):
+                return intrinsic.measure(mesh, mode.split(":", 1)[1]), (0.0, 1.0)
+            if mode == "tags" and "tags" in mesh.fattr:
+                g = self.intr_panel.sel
+                if g < 0:
+                    return (mesh.fattr["tags"] != 0).astype(float), (0.0, 1.0)
+                return ((mesh.fattr["tags"] >> g) & 1).astype(float), (0.0, 1.0)
+        except Exception as e:  # never let a visualisation break the app
+            self.error = f"colour: {e}"
+        return None, None
+
     def refresh_display(self):
-        """(Re)draw the current result, with the attractor influence map if enabled."""
+        """(Re)draw the current result, coloured by the active 'colour by' mode."""
         if not self.result:
             return
-        values, vrange = self.attr_panel.influence_values(self.result.mesh)
-        show_mesh(self.result.mesh, edges=self.show_edges, face_values=values, vrange=vrange)
+        values, vrange = self.color_values(self.result.mesh)
+        show_mesh(self.result.mesh, edges=self.show_edges, face_values=values, vrange=vrange,
+                  label=self.color_mode.replace("measure:", ""))
+        if self.intr_panel.pick != "off":
+            ps.get_surface_mesh("form").set_enabled(False)
 
     def tick(self):
         if self.dirty:
@@ -193,6 +233,7 @@ class App:
             self.ui_theme_applied = self.theme
         self.tick()
         self.attr_panel.sync()
+        self.intr_panel.sync()
         psim.PushItemWidth(170)
         self.theme_ui()
         self.preset_ui()
@@ -201,6 +242,8 @@ class App:
         if psim.CollapsingHeader("Iteration schedule", _OPEN):
             self.schedule_ui()
         self.attr_panel.ui()
+        self.layer_panel.ui()
+        self.intr_panel.ui()
         self.view_export_ui()
         self.status_ui()
         psim.PopItemWidth()
@@ -450,6 +493,15 @@ class App:
                     set_view(self.result.mesh, view)
         changed, self.show_edges = psim.Checkbox("wireframe", self.show_edges)
         if changed:
+            self.refresh_display()
+        modes = [("none", "plain"), ("influence", "attractor influence"), ("layer", "selected layer's field"),
+                 ("tags", "group tags")] + [(f"measure:{k}", v) for k, v in intrinsic.MEASURES.items()]
+        keys = [k for k, _ in modes]
+        cur = keys.index(self.color_mode) if self.color_mode in keys else 0
+        changed, idx = psim.Combo("colour by", cur, [v for _, v in modes])
+        psim.SetItemTooltip("Colour the form by a field or measure to see where things act.")
+        if changed:
+            self.color_mode = keys[idx]
             self.refresh_display()
         psim.PushItemWidth(80)
         _, self.export_fmt = psim.Combo("##fmt", self.export_fmt, [f.upper() for f in EXPORT_FORMATS])

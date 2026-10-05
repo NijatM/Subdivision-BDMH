@@ -29,6 +29,8 @@ CC_WEIGHTS = [
     WeightDef("w2", "w2   corner bias", -2.0, 2.0, "Eq.3: + pulls corners toward face points, - toward edge midpoints."),
     WeightDef("w3", "w3   V/F bias", -2.0, 2.0, "Eq.4 (iter 2+): face point bias toward the old-corner vs old-face vertex."),
     WeightDef("w4", "w4   diag/edge bias", -2.0, 2.0, "Eq.4 (iter 2+): face point bias toward the diagonal vs the edge vertices."),
+    WeightDef("w6", "w6   motif face pull", -2.0, 2.0, "Eq.10: pull face points toward vertices by their motif value U (Intrinsic panel)."),
+    WeightDef("w7", "w7   motif edge pull", -2.0, 2.0, "Eq.11: pull edge points toward vertices by their motif value U (Intrinsic panel)."),
 ]
 
 # Extended Doo-Sabin (eq. 5-6), with separate weights per face class (face-, edge-, vertex-derived).
@@ -80,6 +82,11 @@ class Design:
     attractors: list = field(default_factory=list)  # see attractors.py
     attractor_space: str = "current"  # measure influence at the face's "current" or "rest" (input-mesh) position
     background: float = 1.0  # influence of the main schedule in the eq. 8-9 blend (0 = paper-pure)
+    layers: list = field(default_factory=list)  # function layer stack, see layers.py
+    groups: list = field(default_factory=list)  # tagged faces / locked vertices, see intrinsic.py
+    motifs: dict = field(default_factory=dict)  # motif label ("4F4E") -> U for eq. 10-11
+    intrinsic: list = field(default_factory=list)  # measure-driven weight rules
+    merge: dict = field(default_factory=dict)  # vertex merging / porosity, see merge.py
 
     def __post_init__(self):
         its = [i if isinstance(i, IterationSpec) else IterationSpec(**i) for i in self.iterations]
@@ -91,13 +98,22 @@ class Design:
             raise ValueError("boundary must be 'smooth' or 'locked'")
         if self.attractor_space not in ("current", "rest"):
             raise ValueError("attractor_space must be 'current' or 'rest'")
-        from .attractors import normalize  # local import: attractors imports this module
+        from . import intrinsic, layers, merge  # local imports: these modules import this one
+        from .attractors import normalize
 
         self.attractors = [normalize(a) for a in self.attractors]
+        self.layers = [layers.normalize(ly) for ly in self.layers]
+        self.groups = [intrinsic.normalize_group(g) for g in self.groups]
+        self.intrinsic = [intrinsic.normalize_rule(r) for r in self.intrinsic]
+        self.motifs = {str(k): float(v) for k, v in self.motifs.items()}
+        self.merge = merge.normalize(self.merge)
 
     # ------------------------------------------------------------- caching key
     def base_key(self, root: str | None = None) -> str:
-        key = {"base": self.base, "extrusion": self.extrusion, "boundary": self.boundary, "fade": self.fade_rows}
+        from .intrinsic import base_signature
+
+        key = {"base": self.base, "extrusion": self.extrusion, "boundary": self.boundary, "fade": self.fade_rows,
+               "groups": base_signature(self)}
         path = self.base.get("path") if self.base.get("shape") == "obj" else None
         if path:  # re-import when the file changes on disk
             full = path if os.path.isabs(path) or root is None else os.path.join(root, path)
@@ -106,16 +122,24 @@ class Design:
 
     def level_keys(self, depth: int, root: str | None = None) -> list[str]:
         """Key for the mesh after each iteration: changing iteration k only invalidates levels >= k."""
-        from .attractors import level_signature
-
         keys, prev = [], self.base_key(root)
         for level, spec in enumerate(self.iterations[:depth]):
-            prev = _digest({"prev": prev, "it": asdict(spec), "field": level_signature(self, level)})
+            prev = _digest({"prev": prev, "it": asdict(spec), "field": self.level_signature(level)})
             keys.append(prev)
         return keys
 
+    def level_signature(self, level: int):
+        """Everything besides the iteration's own weights that affects iteration `level`."""
+        from . import attractors, intrinsic, layers, merge
+
+        sig = {"att": attractors.level_signature(self, level), "layers": layers.signature(self, level),
+               "groups": intrinsic.group_signature(self, level), "intr": intrinsic.signature(self, level),
+               "merge": merge.signature(self, level)}
+        return {k: v for k, v in sig.items() if v is not None} or None
+
     # ------------------------------------------------------------------- json
     def to_dict(self) -> dict:
+        from . import layers
         from .attractors import compact
 
         d = asdict(self)
@@ -123,6 +147,13 @@ class Design:
         for it in d["iterations"]:
             it["weights"] = {k: v for k, v in it["weights"].items() if v != 0.0}
         d["attractors"] = [compact(a) for a in self.attractors]
+        d["layers"] = [layers.compact(ly) for ly in self.layers]
+        d["motifs"] = {k: v for k, v in self.motifs.items() if v != 0.0}
+        for key in ("layers", "groups", "intrinsic", "attractors", "motifs"):
+            if not d[key]:
+                d.pop(key)
+        if not d["merge"]["enabled"]:
+            d.pop("merge")
         return d
 
     @classmethod

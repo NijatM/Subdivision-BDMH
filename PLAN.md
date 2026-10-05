@@ -45,6 +45,6 @@ Aligned via a grill-me session on 2026-10-04. Background research: `info.md`.
 1. ✅ Core engine + tests + minimal viewer + Fig. 3 presets
 2. ✅ Schedule UI polish, all base shapes, boundaries, OBJ import/export, presets (+ dark/light theme, user request)
 3. ✅ Attractors (points, curves, falloffs, weight sets & modifiers)
-4. **Function layer stack + plug-ins** ← next
-5. Advanced paper features (tags/locking, motifs, topo distance/curvature, merging)
-6. Watertight print prep + turntable
+4. ✅ Function layer stack + plug-ins
+5. ✅ Advanced paper features (tags/locking, motifs, topo distance/curvature, merging)
+6. **Watertight print prep + turntable** ← next

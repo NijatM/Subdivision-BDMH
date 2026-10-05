@@ -110,7 +110,11 @@ def subdivide(
     relative: bool = True,
     lock_boundary: bool = False,
     vmask: np.ndarray | None = None,
+    vlock: np.ndarray | None = None,
+    vU: np.ndarray | None = None,
 ) -> PolyMesh:
+    """Locks and motif values are Catmull-Clark features; Doo-Sabin ignores them but
+    passes each vertex's lock on to the corners cut from it."""
     H = m.n_halfedges
     w1, wf = _class_weights(m, W)
     scale_f = m.face_scale if relative else np.ones(m.n_faces)
@@ -124,7 +128,14 @@ def subdivide(
             amount = amount * (m.face_reduce(np.asarray(vmask, float)[m.face_idx]) / sizes)
         newV += (m.face_normal * amount[:, None])[m.he_face]
     zero = np.zeros(m.n_faces)
-    vattr = {k: corner_values(m, a, zero) for k, a in m.vattr.items()}
+    vattr = {}
+    for k, a in m.vattr.items():
+        if k == "lock":
+            vattr[k] = a[m.he_from]
+        elif k in ("tv", "te"):
+            vattr[k] = np.zeros(H)
+        else:
+            vattr[k] = corner_values(m, a, zero)
 
     # ---- faces: F-faces, E-faces (interior edges), V-faces (interior vertices)
     nxt, twin = m.he_next, m.he_twin
@@ -147,7 +158,15 @@ def subdivide(
             np.full(n_v, FCLASS_DS_VERT),
         ]
     ).astype(np.int8)
-    return PolyMesh(newV, face_ptr, face_idx, vtype=np.full(H, VTYPE_DS, dtype=np.int8), fclass=fclass, vattr=vattr)
+    fattr = {}
+    for k, a in m.fattr.items():
+        combine = np.bitwise_or if np.issubdtype(a.dtype, np.integer) else np.maximum
+        parts = [a, combine(a[m.he_face[eh]], a[m.he_face[et]])]
+        for fan in fans:
+            parts.append(combine.reduce(a[m.he_face[fan]], axis=1))
+        fattr[k] = np.concatenate(parts)
+    return PolyMesh(newV, face_ptr, face_idx, vtype=np.full(H, VTYPE_DS, dtype=np.int8), fclass=fclass,
+                    vattr=vattr, fattr=fattr)
 
 
 def predicted_faces(m: PolyMesh) -> int:
