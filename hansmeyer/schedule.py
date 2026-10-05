@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 from dataclasses import asdict, dataclass, field
 
 MAX_ITERATIONS = 10
@@ -70,6 +71,8 @@ class Design:
     description: str = ""
     base: dict = field(default_factory=lambda: {"shape": "cube"})
     extrusion: str = "relative"  # "relative" (w x local edge length) or "absolute" (paper-literal)
+    boundary: str = "smooth"  # open meshes: "smooth" (standard rules) or "locked" (fixed, tileable)
+    fade_rows: float = 2.0  # locked: extrusion fades in over this many base-mesh rows from the boundary
     preview_depth: int = 5
     full_depth: int = 8
     iterations: list = field(default_factory=lambda: [IterationSpec() for _ in range(MAX_ITERATIONS)])
@@ -81,14 +84,21 @@ class Design:
         self.iterations = its[:MAX_ITERATIONS]
         if self.extrusion not in ("relative", "absolute"):
             raise ValueError("extrusion must be 'relative' or 'absolute'")
+        if self.boundary not in ("smooth", "locked"):
+            raise ValueError("boundary must be 'smooth' or 'locked'")
 
     # ------------------------------------------------------------- caching key
-    def base_key(self) -> str:
-        return _digest({"base": self.base, "extrusion": self.extrusion})
+    def base_key(self, root: str | None = None) -> str:
+        key = {"base": self.base, "extrusion": self.extrusion, "boundary": self.boundary, "fade": self.fade_rows}
+        path = self.base.get("path") if self.base.get("shape") == "obj" else None
+        if path:  # re-import when the file changes on disk
+            full = path if os.path.isabs(path) or root is None else os.path.join(root, path)
+            key["mtime"] = os.path.getmtime(full) if os.path.exists(full) else None
+        return _digest(key)
 
-    def level_keys(self, depth: int) -> list[str]:
+    def level_keys(self, depth: int, root: str | None = None) -> list[str]:
         """Key for the mesh after each iteration: changing iteration k only invalidates levels >= k."""
-        keys, prev = [], self.base_key()
+        keys, prev = [], self.base_key(root)
         for spec in self.iterations[:depth]:
             prev = _digest({"prev": prev, "it": asdict(spec)})
             keys.append(prev)

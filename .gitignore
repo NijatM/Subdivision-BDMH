@@ -6,3 +6,4 @@ exports/
 .DS_Store
 imgui.ini
 .polyscope.ini
+.app_settings.json

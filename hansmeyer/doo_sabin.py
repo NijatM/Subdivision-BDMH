@@ -9,6 +9,10 @@ exactly; other k is our generalisation.
 
 Faces are classed as face-, edge- or vertex-derived after a DS step, and each
 class can carry its own (w1, w_f) — as the paper proposes.
+
+Open meshes: Doo-Sabin has no boundary rule; boundary edges and vertices get
+no E-/V-faces, so the boundary recedes. It therefore cannot keep a locked
+(tileable) boundary — the app warns about that combination.
 """
 
 from __future__ import annotations
@@ -73,30 +77,54 @@ def _vertex_fans(m: PolyMesh) -> list[np.ndarray]:
         vs = verts[counts == k]
         cols = [start[vs]]
         for _ in range(k - 1):
-            cols.append(twin[prev[cols[-1]]])
-        fans.append(np.stack(cols, axis=1))
-    return fans
+            cols.append(np.where(cols[-1] >= 0, twin[prev[np.maximum(cols[-1], 0)]], -1))
+        fan = np.stack(cols, axis=1)
+        # keep only single closed fans (skips bow-tie / non-manifold vertices)
+        last = fan[:, -1]
+        closes = np.all(fan >= 0, axis=1) & (twin[prev[np.maximum(last, 0)]] == fan[:, 0])
+        fans.append(fan[closes])
+    return [f for f in fans if len(f)]
 
 
-def subdivide(m: PolyMesh, W: dict, relative: bool = True) -> PolyMesh:
+def corner_values(m: PolyMesh, X: np.ndarray, w1: np.ndarray) -> np.ndarray:
+    """Apply the (extended) Doo-Sabin masks to a per-vertex array X -> one value per half-edge."""
     H = m.n_halfedges
-    w1, wf = _class_weights(m, W)
-    scale_f = m.face_scale if relative else np.ones(m.n_faces)
-
-    # ---- new corner points: one per half-edge (face corner)
-    newV = np.empty((H, 3))
+    out_all = np.empty((H,) + X.shape[1:])
     sizes = m.face_size
     for k in np.unique(sizes):
         sel = np.nonzero(sizes == k)[0]
         slots = m.face_ptr[sel][:, None] + np.arange(k)  # (n, k) half-edge ids
-        P = m.V[m.face_idx[slots]]  # (n, k, 3)
+        P = X[m.face_idx[slots]]  # (n, k, ...)
         a = ds_alphas(k, w1[sel])  # (n, k)
+        a = a.reshape(a.shape + (1,) * (P.ndim - 2))
         out = np.zeros_like(P)
         for d in range(k):
-            out += a[:, d, None, None] * np.roll(P, -d, axis=1)
-        newV[slots] = out
+            out += a[:, d:d + 1] * np.roll(P, -d, axis=1)
+        out_all[slots] = out
+    return out_all
+
+
+def subdivide(
+    m: PolyMesh,
+    W: dict,
+    relative: bool = True,
+    lock_boundary: bool = False,
+    vmask: np.ndarray | None = None,
+) -> PolyMesh:
+    H = m.n_halfedges
+    w1, wf = _class_weights(m, W)
+    scale_f = m.face_scale if relative else np.ones(m.n_faces)
+    sizes = m.face_size
+
+    # ---- new corner points: one per half-edge (face corner)
+    newV = corner_values(m, m.V, w1)
     if np.any(wf):
-        newV += (m.face_normal * (wf * scale_f)[:, None])[m.he_face]
+        amount = wf * scale_f
+        if vmask is not None:
+            amount = amount * (m.face_reduce(np.asarray(vmask, float)[m.face_idx]) / sizes)
+        newV += (m.face_normal * amount[:, None])[m.he_face]
+    zero = np.zeros(m.n_faces)
+    vattr = {k: corner_values(m, a, zero) for k, a in m.vattr.items()}
 
     # ---- faces: F-faces, E-faces (interior edges), V-faces (interior vertices)
     nxt, twin = m.he_next, m.he_twin
@@ -119,7 +147,7 @@ def subdivide(m: PolyMesh, W: dict, relative: bool = True) -> PolyMesh:
             np.full(n_v, FCLASS_DS_VERT),
         ]
     ).astype(np.int8)
-    return PolyMesh(newV, face_ptr, face_idx, vtype=np.full(H, VTYPE_DS, dtype=np.int8), fclass=fclass)
+    return PolyMesh(newV, face_ptr, face_idx, vtype=np.full(H, VTYPE_DS, dtype=np.int8), fclass=fclass, vattr=vattr)
 
 
 def predicted_faces(m: PolyMesh) -> int:

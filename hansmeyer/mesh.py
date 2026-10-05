@@ -43,6 +43,7 @@ class PolyMesh:
     face_idx: np.ndarray  # (H,) int64
     vtype: np.ndarray = field(default=None)  # (N,) int8 provenance
     fclass: np.ndarray = field(default=None)  # (F,) int8 provenance
+    vattr: dict = field(default_factory=dict)  # per-vertex attributes carried through subdivision
 
     def __post_init__(self):
         self.V = np.ascontiguousarray(self.V, dtype=np.float64)
@@ -52,6 +53,7 @@ class PolyMesh:
             self.vtype = np.full(len(self.V), VTYPE_BASE, dtype=np.int8)
         if self.fclass is None:
             self.fclass = np.full(self.n_faces, FCLASS_BASE, dtype=np.int8)
+        self.vattr = {k: np.asarray(v, dtype=float) for k, v in self.vattr.items()}
 
     # ------------------------------------------------------------------ build
     @classmethod
@@ -192,6 +194,21 @@ class PolyMesh:
     def euler_characteristic(self) -> int:
         return self.n_verts - self.n_edges + self.n_faces
 
+    def boundary_distance(self) -> np.ndarray:
+        """Edge-hop distance from each vertex to the nearest boundary vertex (inf on closed meshes)."""
+        dist = np.full(self.n_verts, np.inf)
+        dist[self.vert_is_boundary] = 0.0
+        if not np.any(self.vert_is_boundary):
+            return dist
+        a, b = self.edge_verts[:, 0], self.edge_verts[:, 1]
+        while True:
+            new = dist.copy()
+            np.minimum.at(new, a, dist[b] + 1)
+            np.minimum.at(new, b, dist[a] + 1)
+            if np.array_equal(new, dist):
+                return dist
+            dist = new
+
     # --------------------------------------------------------------- geometry
     def face_reduce(self, per_he: np.ndarray) -> np.ndarray:
         """Sum a per-half-edge quantity over each face."""
@@ -278,11 +295,6 @@ class PolyMesh:
 
     # -------------------------------------------------------------------- io
     def write_obj(self, path: str) -> None:
-        with open(path, "w", newline="\n") as fh:
-            fh.write("# Hansmeyer subdivision engine\n")
-            np.savetxt(fh, self.V, fmt="v %.6f %.6f %.6f")
-            sizes = self.face_size
-            for k in np.unique(sizes):
-                sel = np.nonzero(sizes == k)[0]
-                idx = self.face_idx[self.face_ptr[sel][:, None] + np.arange(k)] + 1
-                np.savetxt(fh, idx, fmt="f" + " %d" * k)
+        from .meshio import write_obj
+
+        write_obj(path, self)

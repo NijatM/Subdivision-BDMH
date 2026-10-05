@@ -5,6 +5,12 @@ the mean of the two adjacent faces, vertex weights the mean of incident faces.
 With all weights at zero this is exactly standard Catmull-Clark (incl. the
 standard boundary rules), which the tests verify against a reference.
 
+Boundaries: by default the standard (smooth) boundary rules apply. With
+``lock_boundary`` boundary vertices stay fixed and boundary edge points are
+plain midpoints without extrusion, so the boundary polyline never changes and
+identical open panels tile seamlessly. ``vmask`` (per-vertex, 0..1) scales all
+extrusion — used to fade relief out towards a locked boundary.
+
 Extension beyond the paper: eq. 1 and 3 are applied to n-gons and arbitrary
 valence (the paper states them for quads); eq. 4 applies to quads that have the
 corner/edge/face/edge provenance pattern produced by a previous CC step.
@@ -47,9 +53,22 @@ def face_points(m: PolyMesh, W: dict) -> np.ndarray:
     return Fp
 
 
-def subdivide(m: PolyMesh, W: dict, relative: bool = True) -> PolyMesh:
+def subdivide(
+    m: PolyMesh,
+    W: dict,
+    relative: bool = True,
+    lock_boundary: bool = False,
+    vmask: np.ndarray | None = None,
+) -> PolyMesh:
     N, E, F = m.n_verts, m.n_edges, m.n_faces
     V = m.V
+    ev = m.edge_verts
+    if vmask is None:
+        mask_f = mask_e = mask_v = None
+    else:
+        mask_v = np.asarray(vmask, dtype=float)
+        mask_f = m.face_reduce(mask_v[m.face_idx]) / m.face_size
+        mask_e = 0.5 * (mask_v[ev[:, 0]] + mask_v[ev[:, 1]])
 
     w_f = _per_face(W, "w_f", F)
     w_e_f = _per_face(W, "w_e", F)
@@ -62,10 +81,11 @@ def subdivide(m: PolyMesh, W: dict, relative: bool = True) -> PolyMesh:
     # ---- eq. 1 / 4: face points
     Fp = face_points(m, W)
     if np.any(w_f):
-        Fp += m.face_normal * (w_f * scale_f)[:, None]
+        amount = w_f * scale_f if mask_f is None else w_f * scale_f * mask_f
+        Fp += m.face_normal * amount[:, None]
 
     # ---- eq. 2: edge points
-    ev, ef = m.edge_verts, m.edge_faces
+    ef = m.edge_faces
     Pa, Pb = V[ev[:, 0]], V[ev[:, 1]]
     w1 = m.edge_mean(w1_f)[:, None]
     inner = ef[:, 1] >= 0
@@ -74,8 +94,12 @@ def subdivide(m: PolyMesh, W: dict, relative: bool = True) -> PolyMesh:
     Ep[inner] = (Fsum * (1 + w1[inner]) + (Pa[inner] + Pb[inner]) * (1 - w1[inner])) / 4.0
     w_e = m.edge_mean(w_e_f)
     if np.any(w_e):
-        scale_e = m.edge_mean(scale_f)
-        Ep += m.edge_normal * (w_e * scale_e)[:, None]
+        amount = w_e * m.edge_mean(scale_f)
+        if mask_e is not None:
+            amount = amount * mask_e
+        if lock_boundary:
+            amount = np.where(inner, amount, 0.0)
+        Ep += m.edge_normal * amount[:, None]
 
     # ---- eq. 3: corner points
     val = m.valence.astype(float)
@@ -98,13 +122,18 @@ def subdivide(m: PolyMesh, W: dict, relative: bool = True) -> PolyMesh:
         np.add.at(nb_sum, be[:, 0], V[be[:, 1]])
         np.add.at(nb_sum, be[:, 1], V[be[:, 0]])
         np.add.at(nb_cnt, be.ravel(), 1)
-        regular = bnd & (nb_cnt == 2)
+        regular = bnd & (nb_cnt == 2) & (not lock_boundary)
         Cp[regular] = (nb_sum[regular] + 6 * V[regular]) / 8.0
-        Cp[bnd & ~regular] = V[bnd & ~regular]  # corners / bow-ties stay put
+        fixed = bnd & ~regular  # locked boundary, corners, bow-ties: stay put
+        Cp[fixed] = V[fixed]
     w_c = m.vert_mean(w_c_f)
     if np.any(w_c):
-        scale_v = m.vert_mean(scale_f)
-        Cp += m.vert_normal * (w_c * scale_v)[:, None]
+        amount = w_c * m.vert_mean(scale_f)
+        if mask_v is not None:
+            amount = amount * mask_v
+        if lock_boundary:
+            amount = np.where(bnd, 0.0, amount)
+        Cp += m.vert_normal * amount[:, None]
 
     # ---- topology: one quad per half-edge
     h = np.arange(m.n_halfedges)
@@ -123,7 +152,18 @@ def subdivide(m: PolyMesh, W: dict, relative: bool = True) -> PolyMesh:
         quads.reshape(-1),
         vtype=vtype,
         fclass=np.full(H, FCLASS_CC, dtype=np.int8),
+        vattr={k: propagate_attr(m, a) for k, a in m.vattr.items()},
     )
+
+
+def propagate_attr(m: PolyMesh, a: np.ndarray) -> np.ndarray:
+    """Carry a per-vertex attribute to the next level by plain (unweighted) averaging:
+    corners keep their value, edge points take the endpoint mean, face points the face mean."""
+    ev = m.edge_verts
+    shape = (-1,) + (1,) * (a.ndim - 1)
+    edge = 0.5 * (a[ev[:, 0]] + a[ev[:, 1]])
+    face = m.face_reduce(a[m.face_idx]) / m.face_size.reshape(shape)
+    return np.concatenate([a, edge, face])
 
 
 def predicted_faces(m: PolyMesh) -> int:

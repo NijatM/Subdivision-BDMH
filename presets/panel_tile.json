@@ -1,0 +1,93 @@
+{
+  "name": "Panel \u2014 tileable relief",
+  "description": "Open 4x4 panel with a locked boundary: relief fades out over one row, so copies of this tile butt together seamlessly.",
+  "base": {
+    "shape": "panel",
+    "nx": 4,
+    "ny": 4,
+    "width": 2.0,
+    "height": 2.0,
+    "bend": 0.0,
+    "saddle": 0.0
+  },
+  "extrusion": "relative",
+  "boundary": "locked",
+  "fade_rows": 1.0,
+  "preview_depth": 5,
+  "full_depth": 8,
+  "iterations": [
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_f": 0.6,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_f": 0.4,
+        "w1": -1.0,
+        "w2": -2.0,
+        "w3": -1.0,
+        "w4": 1.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_e": 0.3,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_f": 0.3,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_e": -0.3,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_f": 0.2,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {}
+    },
+    {
+      "scheme": "cc",
+      "weights": {}
+    }
+  ],
+  "view": "three_quarter"
+}

@@ -13,7 +13,7 @@ import numpy as np
 import polyscope as ps
 
 from hansmeyer import Design, Pipeline
-from hansmeyer.view import setup_scene, set_view, show_mesh, write_png
+from hansmeyer.view import THEMES, setup_scene, set_view, show_mesh, write_png
 
 
 def main():
@@ -25,12 +25,13 @@ def main():
     ap.add_argument("--out", default="renders")
     ap.add_argument("--montage", default=None, help="also combine all renders into one image")
     ap.add_argument("--cols", type=int, default=3)
+    ap.add_argument("--theme", default="dark", choices=["dark", "light"])
     args = ap.parse_args()
 
-    setup_scene((args.size, args.size))
+    setup_scene((args.size, args.size), theme=args.theme)
     ps.set_ground_plane_mode("none")
     os.makedirs(args.out, exist_ok=True)
-    pipe = Pipeline()
+    pipe = Pipeline(root=os.path.dirname(os.path.abspath(__file__)))
     tiles = []
     for path in args.presets:
         d = Design.load(path)
@@ -49,7 +50,9 @@ def main():
         h, w = tiles[0].shape[:2]
         cols = min(args.cols, len(tiles))
         rows = -(-len(tiles) // cols)
-        canvas = np.full((rows * h, cols * w, tiles[0].shape[2]), 255, np.uint8)
+        bg = np.array(THEMES[args.theme]["background"] + (1.0,))[: tiles[0].shape[2]] * 255
+        canvas = np.empty((rows * h, cols * w, tiles[0].shape[2]), np.uint8)
+        canvas[:] = bg.astype(np.uint8)
         for i, t in enumerate(tiles):
             r_, c_ = divmod(i, cols)
             canvas[r_ * h:(r_ + 1) * h, c_ * w:(c_ + 1) * w] = t[:h, :w]

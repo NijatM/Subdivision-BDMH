@@ -3,8 +3,8 @@
 from .mesh import PolyMesh
 from .pipeline import Pipeline, RunResult
 from .schedule import CC_WEIGHTS, DS_WEIGHTS, MAX_ITERATIONS, Design, IterationSpec
-from .shapes import SHAPES, make_base
-from . import catmull_clark, doo_sabin
+from .shapes import SHAPES, default_spec, make_base
+from . import catmull_clark, doo_sabin, meshio
 
 __all__ = [
     "PolyMesh",
@@ -17,4 +17,8 @@ __all__ = [
     "MAX_ITERATIONS",
     "SHAPES",
     "make_base",
+    "default_spec",
+    "meshio",
+    "catmull_clark",
+    "doo_sabin",
 ]

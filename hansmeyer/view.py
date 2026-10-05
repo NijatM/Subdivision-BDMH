@@ -13,6 +13,44 @@ from .mesh import PolyMesh
 MESH_NAME = "form"
 MESH_COLOR = (0.86, 0.85, 0.82)
 
+# Polyscope tone-maps the background (gamma ~2.2), so colours are given in linear space:
+# 0.0065 linear ~ 0.10 on screen (a deep charcoal).
+THEMES = {
+    "dark": {"background": (0.0060, 0.0065, 0.0080), "ground": "shadow_only", "edge": (0.18, 0.18, 0.20)},
+    "light": {"background": (1.0, 1.0, 1.0), "ground": "shadow_only", "edge": (0.25, 0.25, 0.25)},
+}
+_theme = {"name": "dark", "polyscope_style": None}
+
+
+def apply_scene_theme(name: str) -> None:
+    """Background / ground plane. Safe to call outside an ImGui frame."""
+    t = THEMES[name]
+    _theme["name"] = name
+    ps.set_background_color(t["background"])
+    ps.set_ground_plane_mode(t["ground"])
+
+
+def apply_ui_theme(name: str) -> None:
+    """ImGui colours — must be called inside a frame (e.g. from the user callback)."""
+    import polyscope.imgui as psim
+
+    colors = psim.GetStyle().Colors
+    if _theme["polyscope_style"] is None:  # remember Polyscope's own dark style once
+        _theme["polyscope_style"] = [tuple(colors[i]) for i in range(psim.ImGuiCol_COUNT)]
+    if name == "dark":
+        for i, c in enumerate(_theme["polyscope_style"]):
+            colors[i] = c
+    else:
+        psim.StyleColorsLight()
+        colors = psim.GetStyle().Colors
+        accent = (0.36, 0.62, 0.50, 1.0)
+        for key, c in [("Header", accent), ("HeaderHovered", (0.42, 0.70, 0.57, 1.0)),
+                       ("Button", (0.36, 0.62, 0.50, 0.55)), ("ButtonHovered", (0.42, 0.70, 0.57, 0.9)),
+                       ("TitleBgActive", accent), ("TitleBg", accent), ("SliderGrab", accent),
+                       ("CheckMark", (0.20, 0.45, 0.35, 1.0))]:
+            colors[getattr(psim, "ImGuiCol_" + key)] = c
+
+
 VIEWS = {
     # Fig. 3 looks down the cube's body diagonal (three-fold symmetry)
     "diagonal": (np.array([1.0, 1.0, 1.0]), "y_up"),
@@ -22,14 +60,13 @@ VIEWS = {
 }
 
 
-def setup_scene(window=(1280, 900)):
+def setup_scene(window=(1280, 900), theme: str = "dark"):
     ps.set_program_name("Hansmeyer Subdivision")
     ps.set_window_size(*window)
     ps.set_up_dir("y_up")
-    ps.set_ground_plane_mode("shadow_only")
-    ps.set_background_color((1.0, 1.0, 1.0))
     ps.set_SSAA_factor(2)
     ps.init()
+    apply_scene_theme(theme)
 
 
 def show_mesh(mesh: PolyMesh, edges: bool | None = None):
@@ -42,7 +79,7 @@ def show_mesh(mesh: PolyMesh, edges: bool | None = None):
         material="clay",
         smooth_shade=False,
         edge_width=0.6 if edges else 0.0,
-        edge_color=(0.25, 0.25, 0.25),
+        edge_color=THEMES[_theme["name"]]["edge"],
         back_face_policy="custom",
         back_face_color=(0.55, 0.42, 0.40),
     )
