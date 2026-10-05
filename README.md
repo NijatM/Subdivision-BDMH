@@ -100,6 +100,51 @@ Mathematical fields and folds layered on top of Hansmeyer's process, in the **Fu
 - **Vertex merging / porosity**: welds vertices of *different* parts of the surface that grow into contact (pairwise, within a fraction of the local edge length). Where a welded vertex would exceed the **max valence**, faces aren't formed, which opens holes and handles. The Euler characteristic is shown.
 - **Colour by** (View & export): attractor influence, the selected layer's field, group tags, or any measure. It shows where things act.
 
+### Printing (FDM) and turntables
+
+**Print (FDM, watertight STL)** turns any form into a printable solid:
+- **What it handles:**
+  - Self-intersections are merged into one solid.
+  - Open or porous skins are thickened to the *min wall*.
+  - Reliefs can get a *solid base*.
+- **What you get:** the model is placed on the build plate in **millimetres, Z up**. Features thinner than about 2 nozzle widths are shown in **red**.
+- **Accuracy:** within a fraction of a voxel of the requested size; volume within about 2%.
+- **Runs in a separate process,** so the app stays responsive. Big models can't crash it, and an out-of-memory failure shows up as a message.
+- **Exports are safe:**
+  - Free disk space is checked first.
+  - Data goes to a temporary file that only replaces the target once complete.
+  - The written STL is **re-read and verified** to be complete and watertight before you see "verified".
+- ***Mesh detail: half*** gives about 4× smaller files (still watertight).
+- **Typical times:** 100 mm at 0.3 mm voxels takes about 2–20 s; 200 mm about 1.5 min and 2 GB of RAM.
+
+The panel is laid out top to bottom:
+- **Printer:** pick your bed (Bambu A1/P1S/X1C, A1 mini, Prusa MK4, CORE One, MINI, or custom). The choice is remembered.
+- **Size:** choose what the number measures (longest side, height, width or depth), type it in mm or click 50/100/150/200. **Fit bed** finds the largest size that fits. The live W × D × H line says whether it fits.
+- **Orientation:** which model axis points up (±X, ±Y, ±Z). **Auto** picks the one with the least overhang.
+- **Cut into parts:** *Whole*, *2 halves* (a horizontal cut at the widest section), *4 quarters* (two vertical cuts: four pillars, like the corners of a cage) or *8 pieces*. You can also tick each cut and move it.
+  - Orange planes on the form show where the cuts go.
+  - Every part is its own closed solid, and its cut faces are exactly flat, so mating parts meet without a gap.
+  - *Alignment pin holes* (default Ø 2.0 mm × 5 mm, for 1.75 mm filament pins) are drilled into both faces of every joint.
+  - Each part is turned on its own to need the least support (usually cut face down), or printed as assembled.
+- **Resolution:** *Draft / Standard / Fine* (voxel = 1 / 0.75 / 0.5 × nozzle) or *Max* (the finest the grid limit allows). The line below shows the real detail size, triangles, STL size, RAM and time. If the grid limit coarsens your choice, it says so.
+- **Advanced:** exact voxel size, grid limit (400–1000 voxels along the longest side, with its RAM cost), min wall, smoothing, voxel softening, mesh detail and solid base.
+- **Support check** (after preparing): set the slicer's support *threshold angle*. Surfaces that would get support turn red, and the area per part is listed.
+  - The angle works like Bambu Studio, Orca and PrusaSlicer: downward surfaces flatter than it (measured from the horizontal) get support, so **higher = more support**.
+- **View:** *Print layout* (parts side by side on the plate) or *Assembled*, with an explode gap. Colour by *needs support*, *too thin* or *parts*.
+- **Export print STLs** writes one verified STL per part (`…_part1of4_left-front.stl`, …). Load them all into the slicer together.
+
+**Why a whole Fig. 3 form gets support everywhere:** its arms stick out sideways, so their undersides are near-horizontal overhangs at any threshold angle. The form also stands on a single arm tip.
+- The mesh is fine: shrink-wrapping it changes nothing.
+- Cutting it into 2 halves at the widest section cuts the support area by about 4–7×, and each half stands on a large flat face.
+
+**Turntable** orbits the camera around the form, or around the print model, and saves a GIF or MP4 to `renders/`. From the command line:
+
+```bash
+python render.py presets/fig3_right.json --turntable renders/fig3_right.gif
+```
+
+If anything unexpected goes wrong, the app logs it to `app_errors.log` and shows it in the panel instead of closing.
+
 ![Tiling](renders/panel_tiling.png)
 *Four copies of `panel_tile` side by side: the locked boundary makes the seams line up.*
 
@@ -155,6 +200,18 @@ The suite checks:
   - Rules, tag inheritance through CC and DS, rule-based selection.
   - **Locked edges stay straight creases** (Fig. 9) and release after L iterations.
 - **Merging**: pairwise only; topological neighbours are never welded; the max valence opens holes; the result stays manifold and can be subdivided further.
+- **Printing**:
+  - Closed, watertight output for self-intersecting, open, porous and relief forms, at full and half detail.
+  - Requested size and wall thickness are kept.
+  - Thin features are flagged, the up-axis rotation is correct, and the voxel cap applies.
+  - The STL validator catches truncated and holed files.
+  - Up rotations are proper (never mirrored), size can be set along any axis, and *Auto* stands a column up.
+  - Halves are closed and stand on a flat cut face. They need much less support than the whole.
+  - Quarter joints meet exactly, explode correctly, and never overlap in the print layout.
+  - Pin holes have the requested volume and keep each part a single solid. Per-part STLs verify.
+  - The support threshold angle follows slicer conventions (higher = more support).
+  - A full disk is refused cleanly (no partial file), writes are atomic, and the worker process runs.
+- **Turntable**: GIF frames orbit (skipped without OpenGL).
 - Affine and scale invariance, caching, the face budget, JSON round-trips, and that every preset loads.
 
 ## Layout
@@ -164,6 +221,7 @@ app.py              interactive Polyscope app
 ui_attractors.py    Attractors panel (gizmo, curves, falloff, sets, modifiers)
 ui_layers.py        Function layers panel
 ui_intrinsic.py     Groups / motifs / measures / merging panels (click-to-tag picking)
+ui_print.py         Print (FDM) and Turntable panels
 ui_common.py        shared UI widgets
 render.py           headless preset → PNG
 hansmeyer/
@@ -179,6 +237,7 @@ hansmeyer/
   layers.py         function layer stack (weights, displacement, folds)
   intrinsic.py      groups & locks, motifs (eq. 10-11), measures & rules
   merge.py          vertex merging / porosity
+  printprep.py      watertight voxel remesh for FDM printing (+ thin-feature check)
   meshio.py         OBJ import + cleanup; OBJ / STL / PLY export
   view.py           shared rendering style and dark/light themes
 presets/            JSON designs
@@ -219,4 +278,4 @@ tests/              pytest suite + independent reference implementation
 3. ✅ Attractors (points and space curves, falloff curves, weight sets and modifiers, gizmo dragging, influence map)
 4. ✅ Function layer stack (TPMS, noise, analytic, folds, domain folds) and a `functions/` plug-in folder
 5. ✅ Tagging/locking (Fig. 9), motifs (eq. 10–11, Fig. 7), topological distance (Fig. 8) and curvature, vertex merging (porosity), colour-by maps
-6. Watertight voxel remesh for FDM printing, turntable GIF/MP4
+6. ✅ Watertight voxel remesh for FDM printing (verified STL export, thin-feature check), turntable GIF/MP4

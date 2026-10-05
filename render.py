@@ -2,6 +2,7 @@
 
     python render.py presets/fig3_left.json                 -> renders/fig3_left.png
     python render.py presets/*.json --depth 6 --montage all.png
+    python render.py presets/fig3_right.json --turntable renders/fig3_right.gif   (or .mp4)
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ import numpy as np
 import polyscope as ps
 
 from hansmeyer import Design, Pipeline, functions
-from hansmeyer.view import THEMES, setup_scene, set_view, show_mesh, write_png
+from hansmeyer.view import THEMES, setup_scene, set_view, show_mesh, turntable, write_png
 
 
 def main():
@@ -26,6 +27,9 @@ def main():
     ap.add_argument("--montage", default=None, help="also combine all renders into one image")
     ap.add_argument("--cols", type=int, default=3)
     ap.add_argument("--theme", default="dark", choices=["dark", "light"])
+    ap.add_argument("--turntable", default=None, help="write an orbit animation (.gif or .mp4) of the first preset")
+    ap.add_argument("--frames", type=int, default=72)
+    ap.add_argument("--seconds", type=float, default=6.0)
     args = ap.parse_args()
 
     root = os.path.dirname(os.path.abspath(__file__))
@@ -48,6 +52,11 @@ def main():
         write_png(out, img)
         tiles.append(img)
         print(f"{out}: depth {r.depth_reached}, {r.mesh.n_faces:,} faces, {r.seconds:.2f}s")
+        if args.turntable and path == args.presets[0]:
+            lo, hi = r.mesh.V.min(0), r.mesh.V.max(0)
+            turntable(args.turntable, 0.5 * (lo + hi), 0.5 * float(np.linalg.norm(hi - lo)), args.frames,
+                      args.seconds, args.size)
+            print("turntable:", args.turntable)
 
     if args.montage and tiles:
         h, w = tiles[0].shape[:2]

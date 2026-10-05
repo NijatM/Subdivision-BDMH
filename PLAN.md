@@ -47,4 +47,4 @@ Aligned via a grill-me session on 2026-10-04. Background research: `info.md`.
 3. ✅ Attractors (points, curves, falloffs, weight sets & modifiers)
 4. ✅ Function layer stack + plug-ins
 5. ✅ Advanced paper features (tags/locking, motifs, topo distance/curvature, merging)
-6. **Watertight print prep + turntable** ← next
+6. ✅ Watertight print prep + turntable

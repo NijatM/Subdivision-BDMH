@@ -1,7 +1,14 @@
-"""Mesh import / export: OBJ in (with cleanup), OBJ / STL / PLY out."""
+"""Mesh import / export: OBJ in (with cleanup), OBJ / STL / PLY out.
+
+Exports are safe: free disk space is checked first, data goes to a temporary file
+that only replaces the target once it is complete, and STL files can be verified
+(complete and watertight) after writing.
+"""
 
 from __future__ import annotations
 
+import os
+import shutil
 import struct
 from collections import defaultdict, deque
 
@@ -193,8 +200,70 @@ def write_ply(path: str, m: PolyMesh) -> None:
 EXPORTERS = {"obj": write_obj, "stl": write_stl, "ply": write_ply}
 
 
+def estimate_bytes(ext: str, n_verts: int, n_faces: int, n_tris: int, n_halfedges: int) -> int:
+    """Approximate size of an export, used to check free disk space before writing."""
+    if ext == "stl":
+        return 84 + 50 * n_tris
+    if ext == "ply":
+        return 300 + 12 * n_verts + n_faces + 4 * n_halfedges
+    return 40 * n_verts + 12 * n_halfedges + 4 * n_faces  # obj (text)
+
+
+class DiskSpaceError(OSError):
+    pass
+
+
+def ensure_space(path: str, nbytes: int, margin: int = 64 * 1024**2) -> None:
+    folder = os.path.dirname(os.path.abspath(path)) or "."
+    free = shutil.disk_usage(folder).free
+    if free < nbytes + margin:
+        raise DiskSpaceError(
+            f"not enough disk space: the file needs ~{nbytes / 1e6:.0f} MB but only {free / 1e6:.0f} MB are free "
+            f"(keep ~{margin / 1e6:.0f} MB spare). Free some space, or export at a lower detail."
+        )
+
+
+def atomic_write(path: str, writer) -> None:
+    """writer(tmp_path) writes the file; it replaces `path` only if it completed."""
+    tmp = path + ".part"
+    try:
+        writer(tmp)
+        os.replace(tmp, path)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        raise
+
+
 def export(path: str, m: PolyMesh) -> None:
     ext = path.rsplit(".", 1)[-1].lower()
     if ext not in EXPORTERS:
         raise ValueError(f"unsupported export format .{ext}")
-    EXPORTERS[ext](path, m)
+    n_tris = int(np.sum(m.face_size - 2))
+    ensure_space(path, estimate_bytes(ext, m.n_verts, m.n_faces, n_tris, m.n_halfedges))
+    atomic_write(path, lambda tmp: EXPORTERS[ext](tmp, m))
+
+
+def validate_stl(path: str) -> dict:
+    """Re-read a binary STL: complete file? watertight (every edge shared by exactly two
+    oppositely oriented triangles)? Returns {"triangles", "complete", "watertight", "bad_edges"}."""
+    size = os.path.getsize(path)
+    with open(path, "rb") as fh:
+        head = fh.read(84)
+        if len(head) < 84:
+            return {"triangles": 0, "complete": False, "watertight": False, "bad_edges": -1}
+        n = struct.unpack("<I", head[80:84])[0]
+        if size != 84 + 50 * n:
+            return {"triangles": n, "complete": False, "watertight": False, "bad_edges": -1}
+        rec = np.frombuffer(fh.read(50 * n), dtype=[("n", "<f4", 3), ("v", "<f4", (3, 3)), ("a", "<u2")])
+    P = rec["v"].reshape(-1, 3)
+    _, idx = np.unique(P, axis=0, return_inverse=True)
+    T = idx.reshape(-1, 3)
+    e = np.concatenate([T[:, [0, 1]], T[:, [1, 2]], T[:, [2, 0]]])
+    fwd = e[:, 0] * (idx.max() + 1) + e[:, 1]
+    rev = e[:, 1] * (idx.max() + 1) + e[:, 0]
+    uniq, counts = np.unique(fwd, return_counts=True)
+    dup = int(np.sum(counts > 1))  # same directed edge twice: non-manifold or flipped
+    missing = int(np.sum(~np.isin(rev, fwd)))  # an edge without its opposite: a hole
+    bad = dup + missing
+    return {"triangles": int(n), "complete": True, "watertight": bad == 0, "bad_edges": bad}

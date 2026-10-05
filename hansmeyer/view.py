@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import struct
 import zlib
 
@@ -119,3 +120,52 @@ def write_png(path: str, rgba: np.ndarray) -> None:
     png += chunk(b"IDAT", zlib.compress(raw, 6)) + chunk(b"IEND", b"")
     with open(path, "wb") as fh:
         fh.write(png)
+
+
+def turntable(path: str, center, radius: float, frames: int = 72, seconds: float = 6.0, size: int = 640,
+              elevation_deg: float = 20.0, distance: float = 3.0, up: str = "y", progress=None) -> str:
+    """Orbit the camera around the up axis ("y" for forms, "z" for print models), capture
+    frames and write a GIF or MP4. Renders whatever is currently shown. Returns the path."""
+    import imageio.v2 as iio
+    from PIL import Image
+
+    if path.lower().endswith(".mp4"):
+        size = max(16, int(round(size / 16)) * 16)  # video codecs want multiples of 16
+    saved_view, saved_up = ps.get_view_as_json(), ps.get_up_dir()
+    ps.set_up_dir(f"{up}_up")
+    center = np.asarray(center, float)
+    el = np.radians(elevation_deg)
+    images = []
+    try:
+        for k in range(int(frames)):
+            az = 2 * np.pi * k / frames
+            ring, height = np.cos(el) * np.array([np.cos(az), np.sin(az)]), np.sin(el)
+            d = np.array([ring[0], height, ring[1]]) if up == "y" else np.array([ring[0], ring[1], height])
+            ps.look_at(tuple(center + radius * distance * d), tuple(center))
+            buf = ps.screenshot_to_buffer(transparent_bg=False, include_UI=False)[:, :, :3]
+            h, w = buf.shape[:2]
+            side = min(h, w)
+            crop = buf[(h - side) // 2:(h - side) // 2 + side, (w - side) // 2:(w - side) // 2 + side]
+            images.append(np.asarray(Image.fromarray(crop).resize((size, size), Image.LANCZOS)))
+            if progress:
+                progress(k + 1, frames)
+    finally:
+        ps.set_up_dir(saved_up)
+        ps.set_view_from_json(saved_view)
+    fps = frames / max(seconds, 0.1)
+    root, ext = os.path.splitext(path)
+    tmp = root + ".part" + ext  # complete files only: write aside, then rename
+    try:
+        if ext.lower() == ".mp4":
+            with iio.get_writer(tmp, fps=fps, codec="libx264", quality=8, macro_block_size=16) as wr:
+                for im in images:
+                    wr.append_data(im)
+        else:
+            Image.fromarray(images[0]).save(tmp, format="GIF", save_all=True, loop=0, optimize=True,
+                                            append_images=[Image.fromarray(i) for i in images[1:]],
+                                            duration=int(round(1000 / fps)))
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+    return path

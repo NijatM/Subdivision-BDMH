@@ -9,19 +9,21 @@ import glob
 import json
 import os
 import time
+import traceback
 
 import numpy as np
 import polyscope as ps
 import polyscope.imgui as psim
 
 from hansmeyer import CC_WEIGHTS, DS_WEIGHTS, MAX_ITERATIONS, SHAPES, Design, IterationSpec, Pipeline, default_spec
-from hansmeyer.meshio import export
+from hansmeyer.meshio import atomic_write, export
 from hansmeyer.view import apply_scene_theme, apply_ui_theme, set_view, setup_scene, show_mesh, write_png
 from hansmeyer import functions, intrinsic
 from hansmeyer.attractors import face_positions
 from ui_attractors import AttractorPanel
 from ui_intrinsic import IntrinsicPanel
 from ui_layers import LayerPanel
+from ui_print import PrintPanel
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 PRESET_DIR = os.path.join(ROOT, "presets")
@@ -29,6 +31,7 @@ INPUT_DIR = os.path.join(ROOT, "inputs")
 EXPORT_DIR = os.path.join(ROOT, "exports")
 RENDER_DIR = os.path.join(ROOT, "renders")
 SETTINGS_PATH = os.path.join(ROOT, ".app_settings.json")
+ERROR_LOG = os.path.join(ROOT, "app_errors.log")
 
 AUTO_BAKE_DELAY = 1.5  # seconds of no edits before auto-bake
 SHARP = {"w1": -1.0, "w2": -2.0}
@@ -99,6 +102,7 @@ class App:
         self.layer_panel.reset()
         self.intr_panel = IntrinsicPanel(self)
         self.intr_panel.reset()
+        self.print_panel = PrintPanel(self)
 
     # ------------------------------------------------------------------ theme
     def set_theme(self, name):
@@ -106,6 +110,11 @@ class App:
         apply_scene_theme(name)
         self.refresh_display()
         self.settings["theme"] = name
+        save_settings(self.settings)
+
+    def remember(self, key, value):
+        """Persist a user choice (theme, printer, ...) in .app_settings.json."""
+        self.settings[key] = value
         save_settings(self.settings)
 
     # ------------------------------------------------------------------ files
@@ -132,6 +141,8 @@ class App:
         self.attr_panel.reset()
         self.layer_panel.reset()
         self.intr_panel.reset()
+        self.print_panel.show_form()
+        self.print_panel.defaults_for_shape_pending = True
         self.tab = 0
         self.need_view_reset = True
         self.edited()
@@ -139,11 +150,15 @@ class App:
 
     def save_preset(self):
         name = "".join(c for c in self.save_name.strip() if c.isalnum() or c in "-_") or "untitled"
-        os.makedirs(PRESET_DIR, exist_ok=True)
         path = os.path.join(PRESET_DIR, name + ".json")
         if self.design.name in ("", "Untitled"):
             self.design.name = name
-        self.design.save(path)
+        try:
+            os.makedirs(PRESET_DIR, exist_ok=True)
+            atomic_write(path, self.design.save)
+        except OSError as e:
+            self.error = f"Could not save preset: {e}"
+            return
         self.presets = self._list_presets()
         self.preset_idx = next(i for i, (n, _) in enumerate(self.presets) if n == name)
         self.status = f"Saved presets/{name}.json"
@@ -204,7 +219,7 @@ class App:
         values, vrange = self.color_values(self.result.mesh)
         show_mesh(self.result.mesh, edges=self.show_edges, face_values=values, vrange=vrange,
                   label=self.color_mode.replace("measure:", ""))
-        if self.intr_panel.pick != "off":
+        if self.intr_panel.pick != "off" or self.print_panel.showing:
             ps.get_surface_mesh("form").set_enabled(False)
 
     def tick(self):
@@ -245,6 +260,7 @@ class App:
         self.layer_panel.ui()
         self.intr_panel.ui()
         self.view_export_ui()
+        self.print_panel.ui()
         self.status_ui()
         psim.PopItemWidth()
 
@@ -290,6 +306,7 @@ class App:
                 self.obj_path = d.base["path"]
             d.view = SHAPES[name].view
             self.need_view_reset = True
+            self.print_panel.defaults_for_shape_pending = True
             self.edited()
         shape = SHAPES[d.base.get("shape", "cube")]
         psim.SetItemTooltip(shape.help)
@@ -537,25 +554,54 @@ class App:
             self.bake()
         if not self.result:
             return
-        os.makedirs(EXPORT_DIR, exist_ok=True)
         path = os.path.join(EXPORT_DIR, f"{self._stem()}.{EXPORT_FORMATS[self.export_fmt]}")
-        export(path, self.result.mesh)
-        self.status = f"Exported exports/{os.path.basename(path)}"
+        try:
+            os.makedirs(EXPORT_DIR, exist_ok=True)
+            export(path, self.result.mesh)  # checks disk space, writes to a temp file, then renames
+        except OSError as e:
+            self.error = f"Export failed: {e}"
+            return
+        note = ""
+        if path.endswith(".stl"):
+            from hansmeyer.meshio import validate_stl
+
+            info = validate_stl(path)
+            note = (" - complete. Raw subdivision surface: it may pass through itself, so use the "
+                    "Print panel for a printable STL") if info["complete"] else " - INCOMPLETE, please re-export"
+        self.status = f"Exported exports/{os.path.basename(path)}{note}"
 
     def screenshot(self):
         if not self.result:
             return
-        os.makedirs(RENDER_DIR, exist_ok=True)
         path = os.path.join(RENDER_DIR, self._stem() + ".png")
-        write_png(path, ps.screenshot_to_buffer(transparent_bg=False, include_UI=False))
+        try:
+            os.makedirs(RENDER_DIR, exist_ok=True)
+            img = ps.screenshot_to_buffer(transparent_bg=False, include_UI=False)
+            atomic_write(path, lambda tmp: write_png(tmp, img))
+        except OSError as e:
+            self.error = f"Screenshot failed: {e}"
+            return
         self.status = f"Saved renders/{os.path.basename(path)}"
+
+    def safe_ui(self):
+        """The Polyscope callback. An exception escaping it would close the app, so anything
+        unexpected is logged to app_errors.log and shown in the panel instead."""
+        try:
+            self.ui()
+        except Exception as e:
+            self.error = f"{type(e).__name__}: {e}  (details in app_errors.log)"
+            try:
+                with open(ERROR_LOG, "a", encoding="utf-8") as fh:
+                    fh.write(time.strftime("%Y-%m-%d %H:%M:%S ") + traceback.format_exc() + "\n")
+            except OSError:
+                pass
 
 
 def main():
     app = App()
     setup_scene(theme=app.theme)
     ps.set_open_imgui_window_for_user_callback(True)
-    ps.set_user_callback(app.ui)
+    ps.set_user_callback(app.safe_ui)
     ps.show()
 
 

@@ -7,3 +7,6 @@ exports/
 imgui.ini
 .polyscope.ini
 .app_settings.json
+app_errors.log
+*.part
+*.part.*
