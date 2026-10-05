@@ -80,13 +80,13 @@ Mathematical fields and folds layered on top of Hansmeyer's process, in the **Fu
 - **Built-in families:**
   - **TPMS**: gyroid, Schwarz P, Schwarz D, Neovius.
   - **Noise**: Perlin, fBm, ridged, domain-warped, Worley cells or borders.
-  - **Analytic**: spherical harmonics, superformula, superquadric, k-fold rose with twist.
+  - **Analytic**: constant (with a mask, a plain weight or relief boost just where the mask is), spherical harmonics, superformula, superquadric, k-fold rose with twist.
   - **Folds**: box, sphere, kaleidoscopic mirror, Mandelbox step.
 - **Per layer:**
   - amplitude and offset.
   - iteration range.
   - **evaluate at** *original* positions (the pattern sticks to the form like a texture) or *current* positions (the form grows through a fixed pattern).
-  - **mask** by an attractor's reach.
+  - **mask** by an attractor's reach, or by **facing direction** (*facing +y* etc.): the layer acts on surfaces facing that way and fades out on surfaces facing away. *facing +y* keeps detail on top and leaves the undersides plain, which is easier to 3D print.
   - **domain fold**: repeat a fold on the field's input, e.g. Mandelbox × 3 with c = 1, for fractal ornament.
 - **Plug-ins**: drop a `.py` file into `functions/` with an `@field` or `@fold` function, then press *Reload plug-ins*. Sliders are generated from its parameters. See [`functions/README.md`](functions/README.md) and the examples `ripples.py` and `twist.py`.
 
@@ -121,6 +121,12 @@ The panel is laid out top to bottom:
 - **Printer:** pick your bed (Bambu A1/P1S/X1C, A1 mini, Prusa MK4, CORE One, MINI, or custom). The choice is remembered.
 - **Size:** choose what the number measures (longest side, height, width or depth), type it in mm or click 50/100/150/200. **Fit bed** finds the largest size that fits. The live W × D × H line says whether it fits.
 - **Orientation:** which model axis points up (±X, ±Y, ±Z). **Auto** picks the one with the least overhang.
+- **Undersides:**
+  - **Self-supporting undersides** fills below every overhang with a smooth keel no flatter than the angle (default 45°). The print then needs almost no support.
+    - Upward-facing surfaces keep all their detail, and horizontal holes get pointed (teardrop) tops.
+    - It adds material: about 2× the volume on the monolith.
+    - Set the slicer's threshold angle below the keel angle.
+  - **Flat foot** trims the bottom flat, so the print stands on a face instead of a point.
 - **Cut into parts:** *Whole*, *2 halves* (a horizontal cut at the widest section), *4 quarters* (two vertical cuts: four pillars, like the corners of a cage) or *8 pieces*. You can also tick each cut and move it.
   - Orange planes on the form show where the cuts go.
   - Every part is its own closed solid, and its cut faces are exactly flat, so mating parts meet without a gap.
@@ -132,6 +138,15 @@ The panel is laid out top to bottom:
   - The angle works like Bambu Studio, Orca and PrusaSlicer: downward surfaces flatter than it (measured from the horizontal) get support, so **higher = more support**.
 - **View:** *Print layout* (parts side by side on the plate) or *Assembled*, with an explode gap. Colour by *needs support*, *too thin* or *parts*.
 - **Export print STLs** writes one verified STL per part (`…_part1of4_left-front.stl`, …). Load them all into the slicer together.
+
+**Printable central monolith** (`presets/printable_central_monolith.json`) is a design made for this. It is the six-arm 3D cross, sized to sit trapped in the centre of a cube cage.
+- Iterations 5–8 add detail only on upward-facing surfaces (layers masked *facing +y*):
+  - fBm-varied extrusion,
+  - alternating ridges and grooves,
+  - a swell,
+  - Worley cells.
+- Asymmetry comes from a ribbed arm, a sunken pocket and a raised bridge curve across the top. Vertex merging welds touching folds into loops.
+- To print it: model Y up, *self-supporting undersides* at 45°, a 1–2 mm flat foot and *mesh detail: half* (≈50 MB instead of ≈220 MB at 150 mm). Set *Size → longest side* to fit your cage.
 
 **Why a whole Fig. 3 form gets support everywhere:** its arms stick out sideways, so their undersides are near-horizontal overhangs at any threshold angle. The form also stands on a single arm tip.
 - The mesh is fine: shrink-wrapping it changes nothing.
@@ -210,6 +225,9 @@ The suite checks:
   - Quarter joints meet exactly, explode correctly, and never overlap in the print layout.
   - Pin holes have the requested volume and keep each part a single solid. Per-part STLs verify.
   - The support threshold angle follows slicer conventions (higher = more support).
+  - Self-supporting undersides keep every layer within the slicer's angle of the one below and only ever add material. The flat foot is flat.
+  - *facing +y* masks leave downward-facing vertices untouched.
+  - The monolith preset prepares to one solid piece that needs almost no support.
   - A full disk is refused cleanly (no partial file), writes are atomic, and the worker process runs.
 - **Turntable**: GIF frames orbit (skipped without OpenGL).
 - Affine and scale invariance, caching, the face budget, JSON round-trips, and that every preset loads.

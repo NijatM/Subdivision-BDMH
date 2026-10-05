@@ -9,7 +9,9 @@ Each layer evaluates a function from functions.py and applies it in one of three
                 in local edge lengths (relative extrusion) or model units (absolute)
   fold          per vertex, after an iteration: V <- V + m * amplitude * (fold(V) - V)
 
-m is the layer's mask: 1, or the normalised influence of a named attractor. Layers run
+m is the layer's mask: 1, the normalised influence of a named attractor, or a facing mask
+("facing +y" ...: 1 on surfaces facing that way, fading to 0 on surfaces facing away, e.g. to keep
+detail on upward-facing surfaces and leave the undersides plain for printing). Layers run
 in list order, only in their iteration range [from, to] (1-based).
 """
 
@@ -72,9 +74,23 @@ def active(design, level: int, targets) -> list[dict]:
             if ly["enabled"] and ly["target"] in targets and ly["from"] <= level + 1 <= ly["to"]]
 
 
-def _mask(design, layer, P) -> np.ndarray | float:
+FACING = {f"facing {s}{a}": v for a, i in zip("xyz", range(3)) for s, v in
+          (("+", np.eye(3)[i]), ("-", -np.eye(3)[i]))}
+FACING_RANGE = (-0.35, 0.45)  # n . direction: 0 at or below the first (undersides), 1 at or above the second
+
+
+def facing_mask(normals: np.ndarray, name: str) -> np.ndarray:
+    """1 where the surface faces the named direction, smoothly 0 where it faces away."""
+    lo, hi = FACING_RANGE
+    t = np.clip((normals @ FACING[name] - lo) / (hi - lo), 0.0, 1.0)
+    return t * t * (3 - 2 * t)
+
+
+def _mask(design, layer, P, normals=None) -> np.ndarray | float:
     if not layer.get("mask"):
         return 1.0
+    if layer["mask"] in FACING:
+        return 1.0 if normals is None else facing_mask(normals, layer["mask"])
     from .attractors import influence
 
     for a in design.attractors:
@@ -106,7 +122,7 @@ def apply_weight_layers(design, mesh, level: int, W: dict) -> dict:
             cache[ly["space"]] = face_positions(mesh, ly["space"])
         P = cache[ly["space"]]
         v = ly["amplitude"] * _field(ly, P) + ly["offset"]
-        m = _mask(design, ly, P)
+        m = _mask(design, ly, P, mesh.face_normal)
         w = W[ly["weight"]]
         b = ly["blend"]
         if b == "add":
@@ -147,14 +163,14 @@ def post_process(design, mesh, level: int, relative: bool = True, vmask=None):
         cur = with_positions(mesh, V)
         if ly["target"] == "displacement":
             P = cur.vattr["rest"] if ly["space"] == "rest" and "rest" in cur.vattr else V
-            m = np.broadcast_to(np.asarray(_mask(design, ly, P), float), (len(V),))
+            m = np.broadcast_to(np.asarray(_mask(design, ly, P, cur.vert_normal), float), (len(V),))
             amount = (ly["amplitude"] * _field(ly, P) + ly["offset"]) * m * keep
             if relative:
                 amount = amount * cur.vert_mean(cur.face_scale)
             V = V + cur.vert_normal * amount[:, None]
         else:
             target = functions.evaluate(ly["function"], V, ly["params"])
-            m = np.broadcast_to(np.asarray(_mask(design, ly, V), float), (len(V),))
+            m = np.broadcast_to(np.asarray(_mask(design, ly, V, cur.vert_normal), float), (len(V),))
             V = V + (ly["amplitude"] * m * keep)[:, None] * (target - V)
     return with_positions(mesh, V)
 

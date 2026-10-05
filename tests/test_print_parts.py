@@ -132,3 +132,58 @@ def test_overhang_threshold_semantics():
     assert overhang_mask(nz, z, 30).tolist() == [True, False, False, False, False]
     assert overhang_mask(nz, z, 60).tolist() == [True, True, False, False, False]  # higher = more support
     assert overhang_mask(nz, np.zeros(5), 60).tolist() == [False] * 5  # resting on the plate
+
+
+# ----------------------------------------------- printable undersides, facing masks
+def test_self_supporting_fill_obeys_the_angle():
+    from scipy import ndimage
+
+    from hansmeyer.printprep import self_supporting
+
+    solid = np.zeros((40, 40, 40), bool)
+    solid[18:22, 18:22, 0:30] = True  # a post
+    solid[4:36, 10:30, 30:34] = True  # a wide slab on top: a big flat overhang
+    out = self_supporting(solid, 45.0)
+    assert np.all(out[solid])  # only ever adds material
+    assert np.array_equal(out[:, :, 30:], solid[:, :, 30:])  # nothing above the overhang changes
+    for z in range(1, 40):  # every layer rests on the one below, grown by 1 voxel (45 deg) ...
+        grown = ndimage.binary_dilation(out[:, :, z - 1], structure=np.ones((3, 3), bool))
+        hanging = out[:, :, z] & ~grown
+        assert not ndimage.binary_erosion(hanging, structure=np.ones((3, 3), bool)).any()  # ... but thin keel edges
+    steep = self_supporting(solid, 63.5)  # steeper keels reach further down: more material
+    assert steep.sum() > out.sum()
+
+
+def test_undersides_and_foot_make_the_form_self_supporting(six_arms):
+    plain = prepare(six_arms, PrintSettings(**FAST))
+    keeled = prepare(six_arms, PrintSettings(**FAST, undersides=45.0, foot_mm=1.0))
+    assert closed(keeled.mesh()) and keeled.parts[0].shells == 1
+    assert keeled.overhang(30)[2] < 0.25 * plain.overhang(30)[2]
+    V, _ = keeled.part_arrays(0)
+    assert (V[:, 2] < 1e-6).sum() > 20  # a flat foot instead of a point
+    assert keeled.volume_cm3 > plain.volume_cm3  # material was added, never removed above the foot
+
+
+def test_facing_mask_keeps_undersides_plain():
+    from hansmeyer import IterationSpec, functions, layers
+
+    n = np.array([[0, 1, 0], [0, 0, 1], [0, -1, 0]], float)
+    assert np.allclose(layers.facing_mask(n, "facing +y"), [1, layers.facing_mask(n[1:2], "facing +y")[0], 0])
+    assert np.allclose(functions.evaluate("constant", np.zeros((4, 3)), {}), 1.0)
+    its = [IterationSpec("cc", {"w1": -1.0, "w2": -2.0})] * 3
+    bump = {"name": "top", "target": "displacement", "function": "constant", "amplitude": 0.0, "offset": 0.4,
+            "from": 3, "to": 3, "mask": "facing +y"}
+    pipe = Pipeline(root=ROOT)
+    a = pipe.run(Design(iterations=its), 3).mesh
+    b = pipe.run(Design(iterations=its, layers=[bump]), 3).mesh
+    moved = np.linalg.norm(b.V - a.V, axis=1)
+    up, down = a.vert_normal[:, 1] > 0.8, a.vert_normal[:, 1] < -0.8
+    assert moved[up].min() > 0.01 and moved[down].max() < 1e-9
+
+
+def test_printable_central_monolith_preset():
+    d = Design.load(os.path.join(ROOT, "presets", "printable_central_monolith.json"))
+    m = Pipeline(root=ROOT).run(d, 6).mesh
+    assert np.all(np.isfinite(m.V))
+    r = prepare(m, PrintSettings(**FAST, undersides=45.0, foot_mm=1.0))
+    assert closed(r.mesh()) and r.parts[0].shells == 1 and r.overhang(30)[2] < 0.02

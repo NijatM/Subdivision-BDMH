@@ -8,7 +8,7 @@ import os
 import polyscope.imgui as psim
 
 from hansmeyer import functions as F
-from hansmeyer.layers import BLENDS, normalize
+from hansmeyer.layers import BLENDS, FACING, normalize
 from ui_common import WARN, iteration_range, list_selector, params_editor, toggle_button, weight_combo
 
 TARGET_HELP = {
@@ -186,10 +186,11 @@ class LayerPanel:
             psim.NewLine()
             psim.SetItemTooltip("original: the pattern sticks to the input mesh like a texture.\n"
                                 "current: the pattern is fixed in space and the growing form moves through it.")
-        names = [""] + [a["name"] for a in self.app.design.attractors]
+        names = [""] + [a["name"] for a in self.app.design.attractors] + list(FACING)
         cur = names.index(ly["mask"]) if ly["mask"] in names else 0
         ch, idx = psim.Combo("mask##ly", cur, ["(everywhere)"] + names[1:])
-        psim.SetItemTooltip("Limit the layer to an attractor's reach (its normalised influence).")
+        psim.SetItemTooltip("Limit the layer to an attractor's reach (its normalised influence), or to surfaces\n"
+                            "facing a direction: 'facing +y' = detail on top, plain undersides (easier to print).")
         if ch:
             ly["mask"] = names[idx]
             self.changed()

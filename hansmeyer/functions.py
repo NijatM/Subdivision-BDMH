@@ -241,6 +241,12 @@ def _sf(angle, m, n1, n2, n3):
     return (np.abs(np.cos(t)) ** n2 + np.abs(np.sin(t)) ** n3) ** (-1.0 / max(n1, 1e-6))
 
 
+@field("constant", "Constant", "analytic", "1 everywhere: with a mask, applies amplitude + offset only where "
+       "the mask is (e.g. a weight boost on upward-facing surfaces).")
+def constant_field(p):
+    return np.ones(len(p))
+
+
 @field("superformula", "Superformula (Gielis)", "analytic",
        "Positive inside a Gielis superformula shape, negative outside: displace to morph toward it.",
        m=(0, 16, 6, "int"), n1=(0.1, 20.0, 3.0), n2=(0.1, 20.0, 6.0), n3=(0.1, 20.0, 6.0), size=(0.2, 6.0, 1.8))

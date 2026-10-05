@@ -375,6 +375,7 @@ class PrintPanel:
         self.printer_ui()
         self.size_ui()
         self.orientation_ui()
+        self.underside_ui()
         self.cut_ui()
         self.resolution_ui()
         self.advanced_ui()
@@ -461,6 +462,26 @@ class PrintPanel:
             self.app.status = f"Least support with model {_up_label(s.up)} up"
         psim.SetItemTooltip("Which model axis points up on the printer. Auto picks the one with the least overhang.\n"
                             "With cuts, this sets the cut directions; each part is then turned for printing on its own.")
+
+    def underside_ui(self):
+        s = self.s
+        psim.SeparatorText("Undersides")
+        on = s.undersides > 0
+        changed, on = psim.Checkbox("self-supporting undersides", on)
+        if changed:
+            s.undersides = 45.0 if on else 0.0
+        psim.SetItemTooltip("Fills below every overhang with a smooth keel no flatter than the angle, so the\n"
+                            "print needs (almost) no support. Upward-facing surfaces keep all their detail;\n"
+                            "horizontal holes get pointed tops. Set the slicer's threshold angle below this.")
+        if s.undersides > 0:
+            psim.SameLine()
+            psim.PushItemWidth(100)
+            _, s.undersides = psim.SliderFloat("angle##under", s.undersides, 30.0, 70.0, "%.0f deg")
+            psim.PopItemWidth()
+        psim.PushItemWidth(100)
+        _, s.foot_mm = psim.SliderFloat("flat foot (mm)", s.foot_mm, 0.0, 5.0, "%.1f")
+        psim.PopItemWidth()
+        psim.SetItemTooltip("Trims the bottom flat by this much, so the print stands on a foot instead of a point.")
 
     def cut_ui(self):
         s = self.s

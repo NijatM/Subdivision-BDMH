@@ -9,12 +9,14 @@ so they cannot go to a slicer directly. This rebuilds them through a voxel grid:
      which unions all self-intersecting parts into one solid
   3. the shell is thickened to a minimum wall, so open skins (panels, porous forms)
      become printable; reliefs can instead be filled down to a flat base
-  4. optionally the solid is cut by axis-aligned planes into 2, 4 or 8 parts, with
+  4. optionally the undersides are made self-supporting (material is added below every overhang
+     as a smooth keel no flatter than a chosen angle) and the bottom is trimmed to a flat foot
+  5. optionally the solid is cut by axis-aligned planes into 2, 4 or 8 parts, with
      matching holes for alignment pins drilled into every joint
-  5. marching cubes on the softened voxel field extracts a closed, outward-oriented surface
+  6. marching cubes on the softened voxel field extracts a closed, outward-oriented surface
      per part, which is smoothed (Taubin: no shrinking) while cut faces stay exactly flat
-  6. each part is turned to need the least support and placed on the build plate
-  7. features thinner than about two nozzle widths are flagged: they would not print
+  7. each part is turned to need the least support and placed on the build plate
+  8. features thinner than about two nozzle widths are flagged: they would not print
 
 Overhangs are judged like a slicer's support "threshold angle": a downward-facing surface
 whose slope from the horizontal is below the threshold needs support.
@@ -49,6 +51,8 @@ class PrintSettings:
     nozzle_mm: float = 0.4
     max_grid: int = 600  # cap on voxels along the longest axis (memory / time guard)
     detail: int = 1  # 1 = full, 2 = half (a 2x coarser output surface: ~4x fewer triangles)
+    undersides: float = 0.0  # > 0: fill below overhangs so no downward surface is flatter than this (deg)
+    foot_mm: float = 0.0  # trim this much off the bottom so the print stands on a flat foot
     cut_x: float | None = None  # cut plane across the width at this fraction of it (None = no cut)
     cut_y: float | None = None  # ... across the depth
     cut_z: float | None = None  # ... across the height; a negative value cuts at the widest section
@@ -308,6 +312,34 @@ def taubin(V: np.ndarray, F: np.ndarray, iterations: int, lam: float = 0.5, mu: 
     return V
 
 
+def self_supporting(solid: np.ndarray, angle_deg: float) -> np.ndarray:
+    """Add material below every overhang so each layer sits within the layer under it, grown by
+    one layer height / tan(angle): overhangs become keels sloping at `angle` from the horizontal,
+    horizontal holes get pointed (teardrop) tops, and upward-facing surfaces are untouched.
+    Overhangs narrower than about two voxels (which slicers bridge) are left as they are."""
+    out = solid.copy()
+    step = 1.0 / np.tan(np.radians(min(max(angle_deg, 5.0), 85.0)))  # horizontal shrink per layer, in voxels
+    carry, above = 0.0, None
+    for z in range(out.shape[2] - 1, -1, -1):
+        if above is not None:
+            carry += step
+            r = int(carry)
+            carry -= r
+            if r == 0:
+                out[:, :, z] |= above
+            else:
+                rows, cols = np.nonzero(above.any(1))[0], np.nonzero(above.any(0))[0]
+                if len(rows):
+                    r0, r1 = max(rows[0] - 1, 0), rows[-1] + 2
+                    c0, c1 = max(cols[0] - 1, 0), cols[-1] + 2
+                    keep = ndimage.distance_transform_edt(np.pad(above[r0:r1, c0:c1], 1))[1:-1, 1:-1] > r
+                    out[r0:r1, c0:c1, z] |= keep
+        above = out[:, :, z] if out[:, :, z].any() else None
+        if above is None:
+            carry = 0.0
+    return out
+
+
 # ------------------------------------------------------------------- cutting
 def _cut_indices(solid: np.ndarray, s: PrintSettings, step: int) -> tuple[list, list]:
     """[(axis, k)]: cut between voxel layers k-1 and k (aligned to the output step), and
@@ -420,8 +452,9 @@ def _boxes(shape, cuts):
 
 # ------------------------------------------------------------ surface output
 def _extract(sub: np.ndarray, origin: np.ndarray, voxel: float, step: int, s: PrintSettings, planes):
-    """Closed surface of one voxel block (mm). Faces on the cut `planes` [(axis, coord, side)]
-    stay exactly on them, so mating parts meet without a gap."""
+    """Closed surface of one voxel block (mm). Faces on the flat `planes` [(axis, layer, side)] - cuts
+    and the foot, at voxel `layer` of this block, with the material on the `side` (+1 above, -1 below) -
+    stay exactly on them and keep their full area, so mating parts meet without a gap."""
     from skimage.measure import marching_cubes
 
     vox = voxel
@@ -435,8 +468,18 @@ def _extract(sub: np.ndarray, origin: np.ndarray, voxel: float, step: int, s: Pr
         vox = voxel * step
     P = 3  # empty border, wide enough for the blur
     vol = np.pad(sub, P).astype(np.float32)
+    # the two voxel layers either side of each flat face, in the padded (output) grid
+    faces = [(a, P + k // step + (0 if side > 0 else -1), P + k // step + (-1 if side > 0 else 0))
+             for a, k, side in planes]
     if s.soften > 0:
+        keep = [(a, np.take(vol, i, axis=a).copy(), o) for a, i, o in faces]
         ndimage.gaussian_filter(vol, s.soften, output=vol, mode="constant", cval=0.0)
+        for (a, layer, o), (_, i, _) in zip(keep, faces):  # blurring would round the flat faces off
+            idx = [slice(None)] * 3
+            idx[a] = i
+            vol[tuple(idx)] = layer
+            idx[a] = o
+            vol[tuple(idx)] = 0.0
     if vol.max() <= 0.5:
         return None  # a sliver that vanishes at this resolution
     V, F, _, _ = marching_cubes(vol, level=0.5, spacing=(vox,) * 3)
@@ -445,7 +488,10 @@ def _extract(sub: np.ndarray, origin: np.ndarray, voxel: float, step: int, s: Pr
     tri = V[F]
     if np.einsum("ij,ij->i", tri[:, 0], np.cross(tri[:, 1], tri[:, 2])).sum() < 0:
         F = F[:, ::-1]  # make the winding outward before using it
-    on = [(a, c, side, np.abs(V[:, a] - c) < 1e-3 * vox) for a, c, side in planes]
+    on = []
+    for a, k, side in planes:
+        c = origin[a] + k * voxel
+        on.append((a, c, side, np.abs(V[:, a] - c) < 1e-3 * vox))
     free = np.ones(len(V), bool)
     for *_, m in on:
         free &= ~m
@@ -462,10 +508,16 @@ def _extract(sub: np.ndarray, origin: np.ndarray, voxel: float, step: int, s: Pr
     return taubin(V, F, s.smooth, project=project if on else None), F.astype(np.int64)
 
 
-def _shells(A) -> int:
+def _shells(A, V, F) -> int:
+    """Separate solid pieces (closed shells enclosing material; internal cavities don't count)."""
     from scipy.sparse.csgraph import connected_components
 
-    return int(connected_components(A, directed=False)[0])
+    k, label = connected_components(A, directed=False)
+    if k == 1:
+        return 1
+    tri = V[F]
+    vol = np.bincount(label[F[:, 0]], np.einsum("ij,ij->i", tri[:, 0], np.cross(tri[:, 1], tri[:, 2])), k)
+    return int(max((vol > 0).sum(), 1))
 
 
 def _layout(sizes, gap: float = 10.0) -> list[np.ndarray]:
@@ -527,7 +579,18 @@ def prepare(mesh: PolyMesh, s: PrintSettings, progress=None) -> PrintResult:
         solid |= np.flip(np.logical_or.accumulate(np.flip(solid, axis=2), axis=2), axis=2)
         solid[:, :, :pad] = False
 
+    if s.undersides > 0:
+        say("making the undersides self-supporting")
+        solid = ndimage.binary_fill_holes(self_supporting(solid, s.undersides))  # no sealed air pockets
     step = max(int(s.detail), 1)
+    foot = None
+    if s.foot_mm > 0:
+        occ = np.nonzero(solid.any(axis=(0, 1)))[0]
+        if len(occ):
+            k = int(occ[0] + max(round(s.foot_mm / voxel), 1))
+            k = int(np.ceil(k / step)) * step
+            solid[:, :, :k] = False
+            foot = k
     cuts, cut_fracs = _cut_indices(solid, s, step)
     pins = 0
     if cuts and s.pins:
@@ -547,12 +610,14 @@ def prepare(mesh: PolyMesh, s: PrintSettings, progress=None) -> PrintResult:
         say(f"extracting surface{f' (part {i + 1} of {len(boxes)})' if len(boxes) > 1 else ''}")
         sl = tuple(slice(b0, b1) for b0, b1, _ in box)
         start = np.array([b0 for b0, _, _ in box])
-        planes = []
+        planes = []  # (axis, voxel layer within this box, side the material is on)
         for a, k in cuts:
             if box[a][0] == k:
-                planes.append((a, origin[a] + k * voxel, 1))
+                planes.append((a, 0, 1))
             elif box[a][1] == k:
-                planes.append((a, origin[a] + k * voxel, -1))
+                planes.append((a, k - box[a][0], -1))
+        if foot is not None and box[2][0] == 0:
+            planes.append((2, foot, 1))  # the flat foot stays exactly flat
         out = _extract(solid[sl], origin + start * voxel, voxel, step, s, planes)
         if out is None:
             notes.append("a sliver too thin for this resolution was left out")
@@ -580,7 +645,7 @@ def prepare(mesh: PolyMesh, s: PrintSettings, progress=None) -> PrintResult:
                        Vp[:, 2].min()])
         Vp += t
         parts.append(PrintPart(name, up, 0, len(Vp), 0, len(F), R, t, np.zeros(3), side,
-                               tuple(float(x) for x in np.ptp(Vp, axis=0)), _shells(A)))
+                               tuple(float(x) for x in np.ptp(Vp, axis=0)), _shells(A, Vp, F)))
         Vs.append(Vp)
         Fs.append(F)
         thins.append(tv)
