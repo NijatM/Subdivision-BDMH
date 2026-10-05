@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from . import catmull_clark, doo_sabin
+from . import attractors, catmull_clark, doo_sabin
 from .mesh import PolyMesh
 from .schedule import Design
 from .shapes import make_base
@@ -27,8 +27,7 @@ def boundary_fade(dist: np.ndarray, rows: float) -> np.ndarray:
 
 
 def uniform_weights(mesh: PolyMesh, level: int, spec) -> dict:
-    """Weight provider for uniform (per-iteration only) weights. Attractors and
-    function fields (milestones 3-4) will return per-face arrays here instead."""
+    """Weight provider for uniform (per-iteration only) weights."""
     return spec.weights
 
 
@@ -70,13 +69,17 @@ class Pipeline:
         mesh = self._get(key)
         if mesh is None:
             mesh = make_base(design.base, self.root)
+            mesh.vattr["rest"] = mesh.V.copy()  # input-mesh position, carried through subdivision
             if design.boundary == "locked":
                 mesh.vattr["bdist"] = mesh.boundary_distance()
             self._put(key, mesh)
         return mesh
 
-    def run(self, design: Design, depth: int, weight_provider=uniform_weights) -> RunResult:
+    def run(self, design: Design, depth: int, weight_provider=None) -> RunResult:
+        """weight_provider(mesh, level, spec) -> weights; default: the design's attractor field."""
         t0 = time.perf_counter()
+        if weight_provider is None:
+            weight_provider = attractors.make_provider(design)
         mesh = self.base(design)
         relative = design.extrusion == "relative"
         lock = design.boundary == "locked"

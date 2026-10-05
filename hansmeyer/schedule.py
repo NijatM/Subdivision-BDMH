@@ -77,6 +77,9 @@ class Design:
     full_depth: int = 8
     iterations: list = field(default_factory=lambda: [IterationSpec() for _ in range(MAX_ITERATIONS)])
     view: str = "diagonal"
+    attractors: list = field(default_factory=list)  # see attractors.py
+    attractor_space: str = "current"  # measure influence at the face's "current" or "rest" (input-mesh) position
+    background: float = 1.0  # influence of the main schedule in the eq. 8-9 blend (0 = paper-pure)
 
     def __post_init__(self):
         its = [i if isinstance(i, IterationSpec) else IterationSpec(**i) for i in self.iterations]
@@ -86,6 +89,11 @@ class Design:
             raise ValueError("extrusion must be 'relative' or 'absolute'")
         if self.boundary not in ("smooth", "locked"):
             raise ValueError("boundary must be 'smooth' or 'locked'")
+        if self.attractor_space not in ("current", "rest"):
+            raise ValueError("attractor_space must be 'current' or 'rest'")
+        from .attractors import normalize  # local import: attractors imports this module
+
+        self.attractors = [normalize(a) for a in self.attractors]
 
     # ------------------------------------------------------------- caching key
     def base_key(self, root: str | None = None) -> str:
@@ -98,18 +106,23 @@ class Design:
 
     def level_keys(self, depth: int, root: str | None = None) -> list[str]:
         """Key for the mesh after each iteration: changing iteration k only invalidates levels >= k."""
+        from .attractors import level_signature
+
         keys, prev = [], self.base_key(root)
-        for spec in self.iterations[:depth]:
-            prev = _digest({"prev": prev, "it": asdict(spec)})
+        for level, spec in enumerate(self.iterations[:depth]):
+            prev = _digest({"prev": prev, "it": asdict(spec), "field": level_signature(self, level)})
             keys.append(prev)
         return keys
 
     # ------------------------------------------------------------------- json
     def to_dict(self) -> dict:
+        from .attractors import compact
+
         d = asdict(self)
-        # keep presets readable: drop all-zero weights
+        # keep presets readable: drop all-zero weights and unused attractor data
         for it in d["iterations"]:
             it["weights"] = {k: v for k, v in it["weights"].items() if v != 0.0}
+        d["attractors"] = [compact(a) for a in self.attractors]
         return d
 
     @classmethod

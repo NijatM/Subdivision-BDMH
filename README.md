@@ -13,6 +13,9 @@ Digital Grotesque (with Benjamin Dillenburger).
 ![Milestone 2 presets](renders/m2_presets.png)
 *Milestone 2 presets: Fig. 4 box column, Fig. 7 classic column, grotto panel, dodecahedron coral, icosahedron crystal, Fig. 3 right.*
 
+![Milestone 3 presets](renders/m3_presets.png)
+*Milestone 3, attractors. Left: paper Fig. 4, four weight sets along y give a base and three sections. Middle: a helix curve wraps the column in a spiral of ornament. Right: a sine-curve "river" across a tileable panel.*
+
 ## Run it
 
 | | First run (installs everything into a local `.venv`) | Afterwards |
@@ -42,6 +45,24 @@ Requirements: **Python 3.10+** ([python.org](https://www.python.org/downloads/);
 - **View & export**: *diagonal* looks down the cube's body diagonal like the paper. Export **OBJ / PLY** (quads kept) or **STL** (triangulated) to `exports/`; *Screenshot* writes to `renders/`.
 - Ctrl+click any slider to type an exact value. Hover a control for its explanation.
 - Pinkish surfaces are **back faces**: the surface has folded through itself.
+
+### Attractors (non-uniform weights)
+
+Attractors make weights vary **in space**, the paper's *extrinsic specification of parameters* (eq. 8–9). Use the **Attractors** panel:
+
+- **+ Point / + Curve** adds one near the form. Click a row to select it. **Drag the white gizmo** in the viewport, or type coordinates.
+- **Kind**:
+  - *point*.
+  - *curve*: line, circle, helix, sine, Lissajous, or an editable **polyline**. *Convert to editable polyline* turns any curve into draggable control points. *Import* reads `.csv/.txt` (x y z per line) or `.obj` polylines from Rhino or Blender; try `inputs/sample_curve.csv`.
+- **Payload**:
+  - *weight set*: a full per-iteration schedule of its own. Each face blends all sets by distance: `c_a = f(d_a)·h_a / Σ f(d_i)·h_i`, `w = Σ w_i·c_i` (eq. 8–9).
+  - *modifier*: rules such as "scale `w_f` ×3 in iterations 1–4" or "add +0.3 to `w_e`", applied near the attractor.
+- **strength** (`h`), **radius**, and **falloff**: `power` is the paper's `(1−d)^t`; also linear, smoothstep, gaussian, or a hand-drawn **spline** (5 sliders). The plot shows the curve.
+- **background**: how much the main schedule takes part in the blend. **0 is paper-pure.** With 0, a *single* set applies fully everywhere it reaches, so use background > 0 for a gradient.
+- **Measure at**:
+  - *current* uses distance from where a face is now, so growth reacts to its own movement.
+  - *original* uses where the face sat on the input mesh, which gives stable zoning.
+- **influence map** colours the form by the selected attractor's influence.
 
 ![Tiling](renders/panel_tiling.png)
 *Four copies of `panel_tile` side by side: the locked boundary makes the seams line up.*
@@ -82,12 +103,18 @@ The suite checks:
 - That every base shape is a valid, outward-facing solid, and that the Platonic solids are regular.
 - **Locked panels are tileable**: the outline stays fixed and opposite edges match. The boundary fade is checked too.
 - OBJ parsing (all index syntaxes), welding, orientation repair, non-manifold rejection, and OBJ/STL/PLY writers.
+- **Attractors**:
+  - eq. 8–9 blending as a partition of unity, plus background blending and modifiers by iteration range.
+  - Falloff shapes, curve geometry, curve distance (exact and fast, with a tested error bound) and polyline import.
+  - Rest vs current positions.
+  - Per-iteration cache invalidation: editing iteration k recomputes only from k.
 - Affine and scale invariance, caching, the face budget, JSON round-trips, and that every preset loads.
 
 ## Layout
 
 ```
 app.py              interactive Polyscope app
+ui_attractors.py    the app's Attractors panel (gizmo, curves, falloff, sets, modifiers)
 render.py           headless preset → PNG
 hansmeyer/
   mesh.py           polygon mesh, vectorised half-edges, normals, per-vertex attributes
@@ -96,29 +123,36 @@ hansmeyer/
   schedule.py       weight definitions, per-iteration schedule, Design (= preset JSON)
   pipeline.py       runs a Design: caching, face budget, boundary fade
   shapes.py         base mesh registry (Platonic solids, columns, panel, OBJ)
+  attractors.py     eq. 8-9 weight sets, modifiers, falloffs, curves, distances
   meshio.py         OBJ import + cleanup; OBJ / STL / PLY export
   view.py           shared rendering style and dark/light themes
 presets/            JSON designs
-inputs/             drop .obj files here to import them
+inputs/             drop .obj meshes / curve files here (samples included)
 tests/              pytest suite + independent reference implementation
 ```
 
 ## Faithfulness to the paper
 
-- **From the paper:** eq. 1–6, non-stationary weights, the CC + DS combination, provenance (corner/edge/face points; face/edge/vertex-derived faces), and the Fig. 4 / Fig. 7 column inputs.
+- **From the paper:** eq. 1–6, non-stationary weights, the CC + DS combination, provenance (corner/edge/face points; face/edge/vertex-derived faces), the Fig. 4 / Fig. 7 column inputs, and **eq. 8–9 extrinsic weight sets** (Fig. 4 zoning, Fig. 5 planar or spatial sets).
 - **Our extensions (labelled in code):**
   - Eq. 1/3 applied to n-gons and any valence.
   - A Doo-Sabin `w1` generalisation for n ≠ 3, 4.
   - Relative extrusion (the paper doesn't say whether normals are unit length; the *absolute* mode is the literal reading).
   - Boundary rules and the locked/tileable mode for open meshes.
+  - Attractors:
+    - A radius and choice of falloff (the paper normalises distance by the largest possible distance).
+    - Curve attractors.
+    - Modifier attractors.
+    - The background set.
+    - The current/original measuring position.
 - **Fig. 3:** the paper publishes no weight values, so the presets reproduce the *character* of the figures, not exact geometry. The left figure's arms are there, but its fluted fans at the arm tips aren't yet.
-- **Fig. 4 zoning** (four weight sets along y) needs attractors, which come in M3. The M2 column presets use uniform weights.
+- **Fig. 4:** reproduced in character by `column_fig4_zoned`: four weight sets along y, a base and three sections with gradients. Again, the paper gives no weight values.
 
 ## Roadmap
 
 1. ✅ Core engine, tests, minimal viewer, Fig. 3 presets
 2. ✅ Dark/light theme, Platonic solids, columns (Fig. 4/7), open panel with smooth/locked boundaries, OBJ import, OBJ/STL/PLY export, schedule overview
-3. Attractors (points and space curves, falloff curves, weight sets and modifiers)
+3. ✅ Attractors (points and space curves, falloff curves, weight sets and modifiers, gizmo dragging, influence map)
 4. Function layer stack (TPMS, noise, analytic, folds) and a `functions/` plug-in folder
 5. Tagging/locking, intrinsic motifs, topological distance and curvature, vertex merging (porosity)
 6. Watertight voxel remesh for FDM printing, turntable GIF/MP4

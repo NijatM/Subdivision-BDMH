@@ -69,7 +69,9 @@ def setup_scene(window=(1280, 900), theme: str = "dark"):
     apply_scene_theme(theme)
 
 
-def show_mesh(mesh: PolyMesh, edges: bool | None = None):
+def show_mesh(mesh: PolyMesh, edges: bool | None = None, face_values: np.ndarray | None = None,
+              vrange: tuple | None = None, label: str = "influence"):
+    """Register the form; optional per-face scalar (e.g. attractor influence) shown as a colour map."""
     edges = mesh.n_faces <= 30_000 if edges is None else edges
     s = ps.register_surface_mesh(
         MESH_NAME,
@@ -83,6 +85,13 @@ def show_mesh(mesh: PolyMesh, edges: bool | None = None):
         back_face_policy="custom",
         back_face_color=(0.55, 0.42, 0.40),
     )
+    if face_values is not None:
+        vals = np.asarray(face_values, float)
+        disp = mesh.display_faces()
+        if len(disp) != mesh.n_faces:  # display was triangulated: one value per triangle
+            vals = np.repeat(vals, mesh.face_size - 2)
+        lo, hi = vrange if vrange else (float(vals.min()), float(max(vals.max(), vals.min() + 1e-9)))
+        s.add_scalar_quantity(label, vals, defined_on="faces", enabled=True, cmap="viridis", vminmax=(lo, hi))
     return s
 
 

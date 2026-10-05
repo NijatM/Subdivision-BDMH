@@ -17,6 +17,7 @@ import polyscope.imgui as psim
 from hansmeyer import CC_WEIGHTS, DS_WEIGHTS, MAX_ITERATIONS, SHAPES, Design, IterationSpec, Pipeline, default_spec
 from hansmeyer.meshio import export
 from hansmeyer.view import apply_scene_theme, apply_ui_theme, set_view, setup_scene, show_mesh, write_png
+from ui_attractors import AttractorPanel
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 PRESET_DIR = os.path.join(ROOT, "presets")
@@ -61,6 +62,7 @@ def toggle_button(label: str, active: bool) -> bool:
 
 class App:
     def __init__(self):
+        self.root = ROOT
         self.settings = load_settings()
         self.theme = self.settings.get("theme", "dark")
         self.ui_theme_applied = None
@@ -86,13 +88,14 @@ class App:
             self.preset_idx = next((i for i, (_, p) in enumerate(self.presets) if p == default), 0)
             self.save_name = os.path.splitext(os.path.basename(default))[0] + "_edit"
         self.obj_path = self.design.base.get("path", "") if self.design.base.get("shape") == "obj" else ""
+        self.attr_panel = AttractorPanel(self)
+        self.attr_panel.reset()
 
     # ------------------------------------------------------------------ theme
     def set_theme(self, name):
         self.theme = name
         apply_scene_theme(name)
-        if self.result:
-            show_mesh(self.result.mesh, edges=self.show_edges)
+        self.refresh_display()
         self.settings["theme"] = name
         save_settings(self.settings)
 
@@ -117,6 +120,7 @@ class App:
         self.preset_idx = idx
         self.save_name = name + "_edit"
         self.obj_path = self.design.base.get("path", "")
+        self.attr_panel.reset()
         self.tab = 0
         self.need_view_reset = True
         self.edited()
@@ -148,13 +152,20 @@ class App:
         self.error = ""
         self.result = r
         self.base_mesh = self.pipe.base(self.design)
-        show_mesh(r.mesh, edges=self.show_edges)
+        self.refresh_display()
         if self.need_view_reset:
             set_view(r.mesh, self.design.view)
             self.need_view_reset = False
         if not np.all(np.isfinite(r.mesh.V)):
             self.error = "Non-finite vertices — reduce the weights"
         return True
+
+    def refresh_display(self):
+        """(Re)draw the current result, with the attractor influence map if enabled."""
+        if not self.result:
+            return
+        values, vrange = self.attr_panel.influence_values(self.result.mesh)
+        show_mesh(self.result.mesh, edges=self.show_edges, face_values=values, vrange=vrange)
 
     def tick(self):
         if self.dirty:
@@ -181,6 +192,7 @@ class App:
             apply_ui_theme(self.theme)
             self.ui_theme_applied = self.theme
         self.tick()
+        self.attr_panel.sync()
         psim.PushItemWidth(170)
         self.theme_ui()
         self.preset_ui()
@@ -188,6 +200,7 @@ class App:
         self.depth_ui()
         if psim.CollapsingHeader("Iteration schedule", _OPEN):
             self.schedule_ui()
+        self.attr_panel.ui()
         self.view_export_ui()
         self.status_ui()
         psim.PopItemWidth()
@@ -436,8 +449,8 @@ class App:
                 if self.result:
                     set_view(self.result.mesh, view)
         changed, self.show_edges = psim.Checkbox("wireframe", self.show_edges)
-        if changed and self.result:
-            show_mesh(self.result.mesh, edges=self.show_edges)
+        if changed:
+            self.refresh_display()
         psim.PushItemWidth(80)
         _, self.export_fmt = psim.Combo("##fmt", self.export_fmt, [f.upper() for f in EXPORT_FORMATS])
         psim.PopItemWidth()

@@ -1,0 +1,359 @@
+{
+  "name": "Column \u2014 Fig. 4 zoned (4 weight sets along y)",
+  "description": "Paper Fig. 4: an elongated cube on a base with four sets of non-stationary weights placed along the y axis (pure eq. 8-9, background 0). The column divides into a base and three sections with smooth gradients between them. Drag the sets up/down in the Attractors panel.",
+  "base": {
+    "shape": "column_box",
+    "height": 6.0,
+    "shaft_width": 0.6,
+    "base_width": 1.0,
+    "base_height": 0.5,
+    "shaft_segments": 3
+  },
+  "extrusion": "relative",
+  "boundary": "smooth",
+  "fade_rows": 2.0,
+  "preview_depth": 5,
+  "full_depth": 8,
+  "iterations": [
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {}
+    },
+    {
+      "scheme": "cc",
+      "weights": {}
+    }
+  ],
+  "view": "front",
+  "attractors": [
+    {
+      "name": "base",
+      "enabled": true,
+      "kind": "point",
+      "position": [
+        0.0,
+        -2.8,
+        0.0
+      ],
+      "payload": "set",
+      "strength": 1.0,
+      "radius": 2.5,
+      "falloff": {
+        "type": "power",
+        "tightness": 2.0,
+        "spline": [
+          1.0,
+          0.8,
+          0.5,
+          0.2,
+          0.0
+        ]
+      },
+      "weights": [
+        {
+          "w_e": 0.3,
+          "w_c": -0.6,
+          "w1": -1.0,
+          "w2": -2.0
+        },
+        {
+          "w_c": -0.3,
+          "w1": -1.0,
+          "w2": -2.0
+        },
+        {
+          "w_f": 0.3,
+          "w1": -1.0,
+          "w2": -2.0
+        },
+        {
+          "w_f": 0.4,
+          "w1": -1.0,
+          "w2": -2.0,
+          "w3": -1.0,
+          "w4": 1.0
+        },
+        {
+          "w_e": 0.3,
+          "w1": -1.0,
+          "w2": -2.0
+        },
+        {
+          "w_f": 0.2,
+          "w1": -1.0,
+          "w2": -2.0
+        },
+        {
+          "w_e": 0.1,
+          "w1": -1.0,
+          "w2": -2.0
+        },
+        {
+          "w1": -1.0,
+          "w2": -2.0
+        }
+      ]
+    },
+    {
+      "name": "lower",
+      "enabled": true,
+      "kind": "point",
+      "position": [
+        0.0,
+        -1.2,
+        0.0
+      ],
+      "payload": "set",
+      "strength": 1.0,
+      "radius": 2.5,
+      "falloff": {
+        "type": "power",
+        "tightness": 2.0,
+        "spline": [
+          1.0,
+          0.8,
+          0.5,
+          0.2,
+          0.0
+        ]
+      },
+      "weights": [
+        {
+          "w_f": 0.2,
+          "w_e": 0.2,
+          "w1": -1.0,
+          "w2": -2.0
+        },
+        {
+          "w_e": 0.4,
+          "w1": -1.0,
+          "w2": -2.0
+        },
+        {
+          "w_f": -0.2,
+          "w1": -1.0,
+          "w2": -2.0
+        },
+        {
+          "w_f": 0.5,
+          "w1": -1.0,
+          "w2": -2.0
+        },
+        {
+          "w_e": 0.3,
+          "w1": -1.0,
+          "w2": -2.0
+        },
+        {
+          "w_f": -0.2,
+          "w1": -1.0,
+          "w2": -2.0
+        },
+        {
+          "w_f": 0.1,
+          "w1": -1.0,
+          "w2": -2.0
+        },
+        {
+          "w1": -1.0,
+          "w2": -2.0
+        }
+      ]
+    },
+    {
+      "name": "middle",
+      "enabled": true,
+      "kind": "point",
+      "position": [
+        0.0,
+        0.6,
+        0.0
+      ],
+      "payload": "set",
+      "strength": 1.0,
+      "radius": 2.5,
+      "falloff": {
+        "type": "power",
+        "tightness": 2.0,
+        "spline": [
+          1.0,
+          0.8,
+          0.5,
+          0.2,
+          0.0
+        ]
+      },
+      "weights": [
+        {
+          "w_e": 0.4,
+          "w_c": -0.9,
+          "w1": -1.0,
+          "w2": -2.0
+        },
+        {
+          "w_e": 0.3,
+          "w_c": -0.4,
+          "w1": -1.0,
+          "w2": -2.0
+        },
+        {
+          "w_e": 0.2,
+          "w1": -1.0,
+          "w2": -2.0
+        },
+        {
+          "w_f": -0.1,
+          "w1": -1.0,
+          "w2": -2.0
+        },
+        {
+          "w_f": 0.6,
+          "w1": -1.0,
+          "w2": -2.0
+        },
+        {
+          "w_f": 0.5,
+          "w1": -1.0,
+          "w2": -2.0,
+          "w3": -1.0,
+          "w4": 1.0
+        },
+        {
+          "w_f": 0.2,
+          "w1": -1.0,
+          "w2": -2.0
+        },
+        {
+          "w1": -1.0,
+          "w2": -2.0
+        }
+      ]
+    },
+    {
+      "name": "top",
+      "enabled": true,
+      "kind": "point",
+      "position": [
+        0.0,
+        2.4,
+        0.0
+      ],
+      "payload": "set",
+      "strength": 1.0,
+      "radius": 2.5,
+      "falloff": {
+        "type": "power",
+        "tightness": 2.0,
+        "spline": [
+          1.0,
+          0.8,
+          0.5,
+          0.2,
+          0.0
+        ]
+      },
+      "weights": [
+        {
+          "w_f": 0.3,
+          "w_c": -1.2,
+          "w1": -1.0,
+          "w2": -2.0
+        },
+        {
+          "w_c": -0.4,
+          "w1": -1.0,
+          "w2": -2.0
+        },
+        {
+          "w_f": 0.4,
+          "w1": -1.0,
+          "w2": -2.0
+        },
+        {
+          "w_f": 0.6,
+          "w1": -1.0,
+          "w2": -2.0,
+          "w3": 1.0,
+          "w4": -1.0
+        },
+        {
+          "w_e": 0.4,
+          "w1": -1.0,
+          "w2": -2.0
+        },
+        {
+          "w_e": -0.3,
+          "w1": -1.0,
+          "w2": -2.0
+        },
+        {
+          "w_f": 0.2,
+          "w1": -1.0,
+          "w2": -2.0
+        },
+        {
+          "w1": -1.0,
+          "w2": -2.0
+        }
+      ]
+    }
+  ],
+  "attractor_space": "rest",
+  "background": 0.0
+}
