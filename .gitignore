@@ -10,3 +10,4 @@ imgui.ini
 app_errors.log
 *.part
 *.part.*
+presets/_last_session.json

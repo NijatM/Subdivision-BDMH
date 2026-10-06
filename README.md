@@ -38,12 +38,13 @@ Requirements: **Python 3.10+** ([python.org](https://www.python.org/downloads/);
 
 - **Theme** (top of the panel): *Dark* is the default; *Light* is available. Your choice is remembered in `.app_settings.json`.
 - **Preset**: load any design from `presets/`. Type a name and press *Save* to store your own.
+  - After every bake, the current design is also kept in `presets/_last_session.json`: load *_last_session* to get back where you left off.
 - **Base mesh**: pick a shape; its parameters appear as sliders.
   - Cube and Platonic solids (tetrahedron, octahedron, dodecahedron, icosahedron).
   - **Column: box on base** (paper Fig. 4) and **Column: classic** (Fig. 7 style: base, shaft with entasis and taper, echinus, abacus).
   - **Panel**: an open relief tile with optional bend or saddle.
   - **Cube cage (frame)**: the 12 edges of a cube as bars, all six faces open.
-  - **Sphere with opening (vessel)**: a sphere with a circular opening on top. *opening* is its angular radius.
+  - **Sphere with opening (vessel)**: a sphere with a circular opening on top. *opening* is its angular radius. With the Vessel on, *diameter (mm)* sets its real size.
   - **Import OBJ**: drop `.obj` files into `inputs/` (a sample `l_block.obj` is included), pick one and press *Load OBJ*. Duplicate vertices are welded, winding is repaired, and the mesh is scaled to fit. Non-manifold meshes are rejected with an explanation.
 - **Boundary** (open meshes only):
   - *smooth* uses the standard Catmull-Clark boundary rules.
@@ -174,18 +175,21 @@ If anything unexpected goes wrong, the app logs it to `app_errors.log` and shows
 
 The **Vessel (lithophane sphere)** panel turns the form into the inside of a thin shell (our extension):
 - **Outside**: an exact, smooth sphere of the chosen *diameter (mm)*.
-- **Inside**: the subdivision relief.
-  - Where the relief rises, the wall is thin (*thinnest wall*) and glows when lit from inside.
-  - Where it sinks, the wall is thick (*thickest wall*) and dark.
+- **Inside**: the subdivision relief, exactly what the schedule's weights build. It is measured against the same schedule run with zero weights, so you edit it like any other form.
+  - The parts reaching out furthest (*glowing share*, e.g. 15%) press against the shell at the *window wall* (0.8 mm). They glow when lit from inside.
+  - Everything else is deeper and thicker, at the form's true proportions times *relief depth*, up to the *deepest wall* cap.
+  - *Turn the relief inside out* swaps what is near the shell and what is deep.
 - **Opening**: an exact, flat circle with a solid *rim wall*. The vessel prints upside down standing on it, so the dome comes out smooth.
-- **Tuning the light pattern**:
-  - *contrast*: how much of the relief's range spreads over the wall band.
-  - *relief scale*: how large a shape still counts as relief.
-  - *invert light*: swap bright and dark.
 - **Light preview** (or *Colour by → light through the wall*): bright = thin. Use the **Section view** to see the relief itself.
-- **Printing**: the Print panel exports the vessel **exactly**, with no voxel remesh, so the sphere stays perfect. It is set upside down (*-Y up*) and sized by the vessel's diameter.
+- **Size**: the *diameter (mm)* slider sits in **Base mesh**, right under the sphere's settings, with the print size shown below it. The same value is in the Vessel panel and the Print panel's **Size** section. The view always fits the sphere to the screen, so the sphere doesn't grow on screen. Watch the *print size* line instead. Type it, use the 80–200 buttons, or *Fit bed*. The walls stay as set in mm at any size.
+- **Printing**: the Print panel exports the vessel **exactly**, with no voxel remesh, so the sphere stays perfect. It is set upside down (*-Y up*).
   - An opening of 35° or more needs no support outside.
-- **Preset**: `presets/lithophane_sphere.json`. A Doo-Sabin step, fBm-varied extrusions and a Worley vein network give a glowing vein pattern over dark cells. At 120 mm it is about 95 g of PLA and a 32 MB STL.
+- **Preset**: `presets/lithophane_sphere.json`. A structured, deep relief from pure weights, with no noise:
+  - Faces push out and corners pull in, then the edges sink into ribs.
+  - The panels swell, then alternate faces and edges into nested coffers.
+  - Fine ribbing finishes it.
+  - Lit from inside, it reads like a rose window: a lattice of glowing windows framed by dark ribs.
+  - At 120 mm the walls are 0.8–7.8 mm: about 136 g of PLA and a 48 MB STL.
 
 ### Weight cheat-sheet (relative extrusion: 1.0 = one local edge length)
 

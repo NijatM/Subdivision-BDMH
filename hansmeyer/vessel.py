@@ -4,9 +4,11 @@ The subdivided form (usually the "Sphere with opening" base) becomes the *inner*
 
   * the outer face is an exact sphere of the given diameter, through every vertex's rest direction
     (where it sat on the input mesh), so it stays perfectly smooth whatever the schedule does
-  * the form's relief - each vertex's radial height above or below the smoothed form - is mapped into
-    the wall thickness between `min_wall_mm` (bright when lit from inside) and `max_wall_mm` (dark),
-    with `contrast` choosing how much of the relief's range fills that band
+  * the form's relief - how far the schedule's weights moved each vertex in or out, measured against the
+    same schedule run with zero weights (plain subdivision) - becomes the wall: the outermost `glow` share
+    of the relief is pressed against the shell at `min_wall_mm` (windows that glow when lit from inside) and
+    everything else is that much thicker, at true proportion times `depth`, up to `max_wall_mm`. Weight
+    changes act on the vessel as they do on any form
   * every boundary loop of the form gets a rim joining the two faces; the top opening's rim is made an
     exact, flat circle of `rim_mm` wall, so the vessel can be printed upside down standing on it
 
@@ -26,13 +28,13 @@ from .mesh import PolyMesh
 DEFAULT_VESSEL = {
     "enabled": False,
     "diameter_mm": 120.0,  # printed outer diameter
-    "min_wall_mm": 0.8,  # thinnest wall: where the relief rises most (brightest)
-    "max_wall_mm": 3.0,  # thickest wall: where the relief sinks most (darkest)
+    "min_wall_mm": 0.8,  # thinnest wall: where the relief reaches out furthest (brightest)
+    "max_wall_mm": 12.0,  # deepest the relief may reach into the sphere (a cap on the wall)
+    "depth": 1.0,  # relief depth: 1 = the form's true proportions, 2 = twice as deep
+    "glow": 12.0,  # % of the inner surface pressed against the thinnest wall: the glowing windows
     "rim_mm": 2.5,  # wall at the opening: a solid ring to print standing on
     "rim_band": 10.0,  # degrees over which the relief fades into the rim
-    "contrast": 0.96,  # share of the relief's height range mapped onto min..max wall (the rest is clipped)
-    "smooth": 40,  # neighbourhood smoothing that defines "height above the form": larger keeps bigger shapes
-    "invert": False,  # swap bright and dark
+    "invert": False,  # turn the relief inside out (swap bright and dark)
 }
 
 
@@ -85,25 +87,43 @@ def _smooth(values: np.ndarray, mesh: PolyMesh, iterations: int) -> np.ndarray:
     return values
 
 
-def wall_thickness(design, relief: PolyMesh) -> np.ndarray:
+def plain_design(design):
+    """The same input and schedule with all weights zero and no fields: plain subdivision. Its vertices
+    match the form's one to one (merging aside), so the difference is exactly what the weights did."""
+    from .schedule import Design, IterationSpec
+
+    return Design(base=dict(design.base), extrusion=design.extrusion, boundary=design.boundary,
+                  fade_rows=design.fade_rows, iterations=[IterationSpec(it.scheme, {}) for it in design.iterations],
+                  groups=[dict(g) for g in design.groups])
+
+
+def relief_height(relief: PolyMesh, plain: PolyMesh | None = None) -> np.ndarray:
+    """How far (model units, + outward) each vertex sits from the plain subdivision, along its rest direction."""
+    rest = relief.vattr.get("rest", relief.V)
+    d = rest / np.maximum(np.linalg.norm(rest, axis=1, keepdims=True), 1e-12)
+    h = np.einsum("ij,ij->i", relief.V, d)
+    if plain is not None and plain.n_verts == relief.n_verts:
+        return h - np.einsum("ij,ij->i", plain.V, d)
+    return h - _smooth(h, relief, 40)  # topology changed (vertex merging): use the smoothed form instead
+
+
+def wall_thickness(design, relief: PolyMesh, plain: PolyMesh | None = None) -> np.ndarray:
     """Wall thickness (mm) at every vertex of the relief, before the rim blend."""
     v = normalize(design.vessel)
-    r = np.linalg.norm(relief.V, axis=1)
-    h = r - _smooth(r, relief, int(v["smooth"]))  # height above the smoothed form
+    h = relief_height(relief, plain)
     if v["invert"]:
         h = -h
-    c = min(max(float(v["contrast"]), 0.05), 1.0)
-    lo, hi = np.percentile(h, [50 * (1 - c), 50 * (1 + c)])
-    u = np.clip((h - lo) / max(hi - lo, 1e-12), 0.0, 1.0)  # 1 = rises most = thinnest
-    return v["max_wall_mm"] - u * (v["max_wall_mm"] - v["min_wall_mm"])
+    top = np.percentile(h, 100.0 - min(max(float(v["glow"]), 0.5), 90.0))  # everything above is a window
+    t = v["min_wall_mm"] + float(v["depth"]) * (top - h) * 0.5 * v["diameter_mm"]
+    return np.clip(t, v["min_wall_mm"], v["max_wall_mm"])
 
 
-def build(design, relief: PolyMesh) -> PolyMesh:
+def build(design, relief: PolyMesh, plain: PolyMesh | None = None) -> PolyMesh:
     v = normalize(design.vessel)
     unit = 2.0 / v["diameter_mm"]  # model units per mm: the outer sphere has radius 1
     rest = relief.vattr.get("rest", relief.V)
     d = rest / np.maximum(np.linalg.norm(rest, axis=1, keepdims=True), 1e-12)
-    t = wall_thickness(design, relief)
+    t = wall_thickness(design, relief, plain)
 
     loops = _boundary_loops(relief)
     top = max(loops, key=lambda lp: d[relief.he_from[lp], 1].mean()) if loops else None

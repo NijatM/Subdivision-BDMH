@@ -6,7 +6,7 @@ import numpy as np
 import polyscope.imgui as psim
 
 from hansmeyer import default_spec
-from ui_common import WARN, toggle_button, wrapped_colored
+from ui_common import OPEN, WARN, toggle_button, wrapped_colored
 
 OK = (0.45, 0.85, 0.55, 1.0)
 
@@ -27,11 +27,12 @@ class VesselPanel:
     def ui(self):
         app, d = self.app, self.app.design
         v = d.vessel
-        if not psim.CollapsingHeader("Vessel (lithophane sphere)"):
+        if not psim.CollapsingHeader("Vessel (lithophane sphere)", OPEN if v["enabled"] else 0):
             return
         psim.TextWrapped("Turns the form into the inside of a thin shell: an exact, smooth sphere outside, the "
-                         "subdivision relief inside. Where the relief rises the wall is thin and glows when lit "
-                         "from inside; where it sinks the wall is thick and dark.")
+                         "subdivision relief inside - exactly what the schedule's weights build, so edit them as on "
+                         "any form. The parts reaching out furthest press against the shell as thin windows that "
+                         "glow when lit from inside; deeper relief is thicker and darker.")
         changed, on = psim.Checkbox("vessel on", v["enabled"])
         if changed:
             v["enabled"] = on
@@ -48,38 +49,37 @@ class VesselPanel:
             return
 
         edited = False
-        psim.PushItemWidth(120)
-        ch, val = psim.InputFloat("diameter (mm)##vessel", v["diameter_mm"], 5.0, 20.0, "%.0f")
+        ch, val = psim.SliderFloat("diameter (mm)##vessel", v["diameter_mm"], 30.0, 300.0, "%.0f mm")
         if ch:
             v["diameter_mm"] = float(min(max(val, 20.0), 400.0))
             edited = True
-        psim.PopItemWidth()
-        ch, val = psim.SliderFloat("thinnest wall (mm)", v["min_wall_mm"], 0.4, 3.0, "%.2f")
+        psim.SetItemTooltip("The real, printed size (also in Base mesh and the Print panel). Ctrl+click to type.\n"
+                            "The view always fits the sphere to the screen; walls stay as set in mm.")
+        ch, val = psim.SliderFloat("relief depth", v["depth"], 0.1, 4.0, "x %.2f")
+        if ch:
+            v["depth"], edited = val, True
+        psim.SetItemTooltip("1 = the form's true proportions; 2 = twice as deep into the sphere.")
+        ch, val = psim.SliderFloat("glowing share (%)", v["glow"], 1.0, 60.0, "%.0f %%")
+        if ch:
+            v["glow"], edited = val, True
+        psim.SetItemTooltip("How much of the inside (the parts reaching out furthest) presses against the shell\n"
+                            "as thin, glowing windows.")
+        ch, val = psim.SliderFloat("window wall (mm)", v["min_wall_mm"], 0.4, 3.0, "%.2f")
         if ch:
             v["min_wall_mm"] = val
             v["max_wall_mm"] = max(v["max_wall_mm"], val + 0.1)
             edited = True
-        psim.SetItemTooltip("Brightest spots. Keep it >= 2 nozzle widths (0.8 mm for a 0.4 nozzle).")
-        ch, val = psim.SliderFloat("thickest wall (mm)", v["max_wall_mm"], 0.5, 8.0, "%.2f")
+        psim.SetItemTooltip("The thinnest wall: the glowing windows. Keep it >= 2 nozzle widths (0.8 mm for a 0.4 nozzle).")
+        ch, val = psim.SliderFloat("deepest wall (mm)", v["max_wall_mm"], 1.0, 30.0, "%.1f")
         if ch:
             v["max_wall_mm"] = max(val, v["min_wall_mm"] + 0.1)
             edited = True
-        psim.SetItemTooltip("Darkest areas. White PLA lithophanes usually span about 0.8 - 3 mm.")
+        psim.SetItemTooltip("A cap on how far the relief may reach into the sphere (it flattens anything deeper).")
         ch, val = psim.SliderFloat("rim wall (mm)", v["rim_mm"], 0.8, 8.0, "%.1f")
         if ch:
             v["rim_mm"], edited = val, True
         psim.SetItemTooltip("Solid ring around the opening: what the print stands on.")
-        ch, val = psim.SliderFloat("contrast", v["contrast"], 0.3, 1.0, "%.2f")
-        if ch:
-            v["contrast"], edited = val, True
-        psim.SetItemTooltip("Share of the relief's height range spread between thinnest and thickest wall.\n"
-                            "Lower = more of the wall at the extremes (bolder light pattern).")
-        ch, val = psim.SliderInt("relief scale", int(v["smooth"]), 2, 200)
-        if ch:
-            v["smooth"], edited = val, True
-        psim.SetItemTooltip("How large a shape still counts as relief: small = only fine detail shows in the light,\n"
-                            "large = big folds and lobes show too.")
-        ch, val = psim.Checkbox("invert light", v["invert"])
+        ch, val = psim.Checkbox("turn the relief inside out", v["invert"])
         if ch:
             v["invert"], edited = val, True
         if edited:
@@ -89,7 +89,8 @@ class VesselPanel:
         if info:
             D = info["diameter_mm"]
             lo, hi = info["wall_mm"]
-            psim.Text(f"wall {lo:.2f} - {hi:.2f} mm")
+            psim.Text(f"wall {lo:.2f} - {hi:.2f} mm" + ("  (reaching the cap: deeper parts are flattened)"
+                                                          if hi >= v["max_wall_mm"] - 1e-6 else ""))
             op = info.get("opening_deg")
             if op is not None:
                 psim.Text(f"opening {D * np.sin(np.radians(op)):.0f} mm across ({op:.0f} deg from the top)")

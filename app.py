@@ -34,6 +34,7 @@ EXPORT_DIR = os.path.join(ROOT, "exports")
 RENDER_DIR = os.path.join(ROOT, "renders")
 SETTINGS_PATH = os.path.join(ROOT, ".app_settings.json")
 ERROR_LOG = os.path.join(ROOT, "app_errors.log")
+LAST_SESSION = os.path.join(PRESET_DIR, "_last_session.json")
 
 AUTO_BAKE_DELAY = 1.5  # seconds of no edits before auto-bake
 SHARP = {"w1": -1.0, "w2": -2.0}
@@ -244,6 +245,26 @@ class App:
 
     def bake(self):
         self.baked = self.compute(self.design.full_depth)
+        if self.baked:
+            self.autosave()
+
+    def autosave(self):
+        """Keep the current design in presets/_last_session.json, so edits survive closing the app."""
+        try:
+            text = json.dumps(self.design.to_dict(), indent=2)
+        except (TypeError, ValueError):
+            return
+        if text == getattr(self, "_autosaved", None):
+            return
+        def write(tmp):
+            with open(tmp, "w", encoding="utf-8") as fh:
+                fh.write(text)
+
+        try:
+            atomic_write(LAST_SESSION, write)
+            self._autosaved = text
+        except OSError:
+            pass  # a full disk only costs the autosave
 
     # --------------------------------------------------------------------- ui
     def ui(self):
@@ -331,6 +352,9 @@ class App:
                 d.base[p.name] = v
                 self.edited()
 
+        if shape.name == "sphere_open":
+            self.vessel_size_ui()
+
         if shape.name == "obj":
             self.obj_ui()
 
@@ -340,6 +364,22 @@ class App:
                               + (", open" if np.any(m.vert_is_boundary) else ", closed"))
             if np.any(m.vert_is_boundary):
                 self.boundary_ui()
+
+    def vessel_size_ui(self):
+        """The sphere's real size: with the vessel on, its walls are in mm, so the size belongs to the design."""
+        d = self.design
+        if not vessel.active(d):
+            psim.TextDisabled("Turn on the Vessel panel to set its size in mm.")
+            return
+        D = d.vessel["diameter_mm"]
+        changed, D = psim.SliderFloat("diameter (mm)##base", D, 30.0, 300.0, "%.0f mm")
+        psim.SetItemTooltip("The real, printed size of the sphere (Ctrl+click to type). The view always fits the\n"
+                            "sphere to the screen; walls stay as set in mm, so a smaller sphere looks thicker-walled.")
+        if changed:
+            d.vessel["diameter_mm"] = float(min(max(D, 20.0), 400.0))
+            self.edited()
+        H = 0.5 * D * (1 + np.cos(np.radians(d.base.get("opening", 40.0))))
+        psim.TextColored(ACTIVE, f"print size: {D:.0f} x {D:.0f} x {H:.0f} mm (standing on the rim)")
 
     def obj_ui(self):
         d = self.design
@@ -545,7 +585,8 @@ class App:
         if self.result:
             r = self.result
             state = "baked" if self.baked else "preview"
-            psim.Text(f"{state}: depth {r.depth_reached}  |  {r.mesh.n_faces:,} faces  |  {r.seconds * 1000:.0f} ms")
+            size = f"  |  {self.design.vessel['diameter_mm']:.0f} mm sphere" if vessel.active(self.design) else ""
+            psim.Text(f"{state}: depth {r.depth_reached}  |  {r.mesh.n_faces:,} faces  |  {r.seconds * 1000:.0f} ms{size}")
             if r.capped_by_budget:
                 psim.TextColored(WARN, f"Capped at depth {r.depth_reached} by the face budget")
         if self.error:

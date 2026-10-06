@@ -417,15 +417,46 @@ class PrintPanel:
         psim.SetItemTooltip("Panels lie flat on a solid base; everything else stands up (model Y up).")
         self.result_ui()
 
+    def vessel_height(self, D: float) -> float:
+        """Height of the vessel standing on its rim."""
+        op = self.app.design.base.get("opening", 40.0) if self.app.design.base.get("shape") == "sphere_open" else 0.0
+        return 0.5 * D * (1 + np.cos(np.radians(op)))
+
+    def set_vessel_size(self, D: float):
+        v = self.app.design.vessel
+        D = float(min(max(D, 20.0), 400.0))
+        if abs(D - v["diameter_mm"]) > 1e-9:
+            v["diameter_mm"] = D
+            self.app.edited()  # walls are in mm: the geometry is rebuilt for the new size
+
     def vessel_print_ui(self):
         v = self.app.design.vessel
         psim.TextWrapped("Vessel: the mesh is already one clean, closed solid, so it is exported exactly - no "
                          "voxel remesh - and the outside stays a perfect sphere.")
         self.printer_ui()
+        psim.SeparatorText("Size")
+        psim.PushItemWidth(120)
+        changed, D = psim.InputFloat("diameter (mm)##printvessel", v["diameter_mm"], 1.0, 10.0, "%.0f")
+        psim.PopItemWidth()
+        if changed:
+            self.set_vessel_size(D)
+        psim.SetItemTooltip("Outer diameter of the sphere. Type a value or use - / + (Ctrl: steps of 10).\n"
+                            "The walls stay as set in mm (0.8 mm windows stay 0.8 mm at any size).")
+        for mm in (80, 100, 120, 150, 200):
+            if toggle_button(f"{mm}##vsize{mm}", abs(v["diameter_mm"] - mm) < 1e-6):
+                self.set_vessel_size(mm)
+            psim.SameLine()
+        if psim.Button("Fit bed##vessel"):
+            bed = self.bed() - 4.0
+            h_per_d = self.vessel_height(1.0)
+            self.set_vessel_size(np.floor(min(bed[0], bed[1], bed[2] / max(h_per_d, 1e-9))))
+        psim.SetItemTooltip("Largest diameter that fits the printer bed, standing on its rim.")
         D = v["diameter_mm"]
-        ok = self.fits(np.array([D, D, D]), any_way=False)
-        psim.TextColored(OK if ok else WARN, f"diameter {D:.0f} mm (set in the Vessel panel)"
-                         + ("  - fits the bed" if ok else "  - bigger than the bed"))
+        H = self.vessel_height(D)
+        dims = np.array([D, D, H])
+        ok = self.fits(dims, any_way=False)
+        wrapped_colored(OK if ok else WARN, f"W {D:.0f} x D {D:.0f} x H {H:.0f} mm standing on the rim"
+                        + ("  - fits the bed" if ok else "  - bigger than the bed"))
         self.orientation_ui()
         if self.s.up == "-y":
             wrapped_colored(GREY, "Upside down: the opening's rim stands on the plate, the dome prints on top.")
@@ -687,7 +718,9 @@ class PrintPanel:
         psim.TextColored(OK if share < 0.03 else WARN,
                          f"~{total:.0f} cm2 ({100 * share:.1f}% of the surface) needs support (red)")
         if n == 1 and share >= 0.03:
-            psim.TextWrapped("Lots of support: cut it into parts (2 halves usually helps most), or try another "
+            psim.TextWrapped("Mostly the inside of the dome's top (its ceiling): slicers usually bridge it, or "
+                             "lower the relief depth there." if self.vessel_mode() else
+                             "Lots of support: cut it into parts (2 halves usually helps most), or try another "
                              "up direction.")
         bed = self.bed()
         if n > 1:

@@ -127,5 +127,6 @@ class Pipeline:
             reached = level + 1
         relief = None
         if vessel.active(design) and mesh.n_faces:
-            relief, mesh = mesh, vessel.build(design, mesh)
+            plain = self.run(vessel.plain_design(design), reached).mesh if reached else None
+            relief, mesh = mesh, vessel.build(design, mesh, plain)
         return RunResult(mesh, reached, depth, capped, time.perf_counter() - t0, hits, relief)

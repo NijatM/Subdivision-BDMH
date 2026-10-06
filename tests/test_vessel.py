@@ -55,6 +55,26 @@ def test_vessel_walls_follow_the_relief_and_light():
     assert np.corrcoef(wf, light)[0, 1] < -0.9  # thinner wall = brighter
 
 
+def test_relief_is_exactly_what_the_weights_build():
+    pipe = Pipeline(root=ROOT)
+    plain = Design(base={"shape": "sphere_open"}, boundary="locked", iterations=[IterationSpec("cc", {})] * 4,
+                   vessel={"enabled": True, "min_wall_mm": 0.8})
+    m = pipe.run(plain, 4).mesh
+    rest = m.vattr["rest"]
+    theta = np.degrees(np.arccos(rest[:, 1] / np.linalg.norm(rest, axis=1)))
+    body = theta > 40.0 + 10.0 + 1.0  # past the opening and the band where the wall blends into the rim
+    assert np.allclose(m.vattr["wall_mm"][body], 0.8)  # no weights: a uniform thin wall
+
+    def walls(**kw):
+        return pipe.run(design(**kw), 4).mesh.vattr["wall_mm"]
+
+    shallow, deep = walls(depth=0.5, max_wall_mm=30.0), walls(depth=2.0, max_wall_mm=30.0)
+    assert deep.mean() > shallow.mean() + 1.0  # deeper relief = thicker on average
+    for glow in (5.0, 30.0):
+        share = (walls(glow=glow) <= 0.8 + 1e-9).mean()  # (outer and inner list the same walls)
+        assert share == pytest.approx(glow / 100, abs=0.05)
+
+
 def test_vessel_round_trips_through_presets(tmp_path):
     d = design(diameter_mm=90.0)
     p = tmp_path / "v.json"
