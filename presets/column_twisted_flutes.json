@@ -1,16 +1,20 @@
 {
-  "name": "Sharp starter",
-  "description": "w1=-1, w2=-2 on every iteration switches off CC smoothing so extrusions accumulate instead of melting. A good starting point for exploration.",
+  "name": "column_twisted_flutes",
+  "description": "A 10-fold rose field with twist displaces the box column: spiral fluting, like a Solomonic column.",
   "base": {
-    "shape": "cube"
+    "shape": "column_box",
+    "shaft_segments": 3
   },
   "extrusion": "relative",
+  "boundary": "smooth",
+  "fade_rows": 2.0,
   "preview_depth": 5,
-  "full_depth": 8,
+  "full_depth": 7,
   "iterations": [
     {
       "scheme": "cc",
       "weights": {
+        "w_f": 0.15,
         "w1": -1.0,
         "w2": -2.0
       }
@@ -18,6 +22,7 @@
     {
       "scheme": "cc",
       "weights": {
+        "w_e": 0.15,
         "w1": -1.0,
         "w2": -2.0
       }
@@ -25,6 +30,7 @@
     {
       "scheme": "cc",
       "weights": {
+        "w_f": 0.2,
         "w1": -1.0,
         "w2": -2.0
       }
@@ -32,6 +38,7 @@
     {
       "scheme": "cc",
       "weights": {
+        "w_e": 0.2,
         "w1": -1.0,
         "w2": -2.0
       }
@@ -39,6 +46,7 @@
     {
       "scheme": "cc",
       "weights": {
+        "w_f": 0.15,
         "w1": -1.0,
         "w2": -2.0
       }
@@ -46,6 +54,7 @@
     {
       "scheme": "cc",
       "weights": {
+        "w_e": 0.1,
         "w1": -1.0,
         "w2": -2.0
       }
@@ -73,5 +82,24 @@
       "weights": {}
     }
   ],
-  "view": "diagonal"
+  "view": "three_quarter",
+  "attractor_space": "current",
+  "background": 1.0,
+  "layers": [
+    {
+      "name": "L",
+      "enabled": true,
+      "target": "displacement",
+      "function": "rose",
+      "params": {
+        "k": 10,
+        "twist": 1.2
+      },
+      "amplitude": 0.35,
+      "offset": 0.0,
+      "from": 2,
+      "to": 6,
+      "space": "rest"
+    }
+  ]
 }

@@ -1,48 +1,59 @@
 {
-  "name": "Fig. 7 \u2014 motif-driven column",
-  "description": "Paper Fig. 7 / eq. 10-11: vertices classed by motif get attractor/deflector values (3F3E cap rings +1, 4F4E shaft +0.5, 8F8E cap centres -1), applied through w6/w7. Capital and base differentiate from the mesh's own topology.",
+  "name": "panel_tileable",
+  "description": "An open 4x4 panel with a locked boundary: the relief fades out over one row, so copies of this tile butt together seamlessly.",
   "base": {
-    "shape": "column_classic"
+    "shape": "panel",
+    "nx": 4,
+    "ny": 4,
+    "width": 2.0,
+    "height": 2.0,
+    "bend": 0.0,
+    "saddle": 0.0
   },
   "extrusion": "relative",
-  "boundary": "smooth",
-  "fade_rows": 2.0,
+  "boundary": "locked",
+  "fade_rows": 1.0,
   "preview_depth": 5,
-  "full_depth": 7,
+  "full_depth": 8,
   "iterations": [
     {
       "scheme": "cc",
       "weights": {
-        "w_f": 0.3,
+        "w_f": 0.6,
         "w1": -1.0,
-        "w2": -2.0,
-        "w6": 1.0,
-        "w7": 1.0
+        "w2": -2.0
       }
     },
     {
       "scheme": "cc",
       "weights": {
-        "w_c": -0.3,
+        "w_f": 0.4,
         "w1": -1.0,
         "w2": -2.0,
-        "w6": 1.0,
-        "w7": 0.5
-      }
-    },
-    {
-      "scheme": "cc",
-      "weights": {
-        "w_f": 0.3,
-        "w1": -1.0,
-        "w2": -2.0,
-        "w6": 0.5
+        "w3": -1.0,
+        "w4": 1.0
       }
     },
     {
       "scheme": "cc",
       "weights": {
         "w_e": 0.3,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_f": 0.3,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_e": -0.3,
         "w1": -1.0,
         "w2": -2.0
       }
@@ -71,13 +82,6 @@
     },
     {
       "scheme": "cc",
-      "weights": {
-        "w1": -1.0,
-        "w2": -2.0
-      }
-    },
-    {
-      "scheme": "cc",
       "weights": {}
     },
     {
@@ -85,12 +89,5 @@
       "weights": {}
     }
   ],
-  "view": "three_quarter",
-  "attractor_space": "current",
-  "background": 1.0,
-  "motifs": {
-    "3F3E": 1.0,
-    "4F4E": 0.5,
-    "8F8E": -1.0
-  }
+  "view": "three_quarter"
 }

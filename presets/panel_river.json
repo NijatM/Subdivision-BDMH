@@ -1,5 +1,5 @@
 {
-  "name": "Panel \u2014 river (sine-curve attractor)",
+  "name": "panel_river",
   "description": "A sine-curve modifier on a tileable panel pushes a meandering band of bulbous relief across an otherwise mild texture. Influence is measured at the original (rest) positions.",
   "base": {
     "shape": "panel",

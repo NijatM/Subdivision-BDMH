@@ -1,5 +1,5 @@
 {
-  "name": "Column \u2014 helix attractor",
+  "name": "column_helix_band",
   "description": "A helix curve modifier wraps the classic column: near the curve, face extrusion is boosted early and edge ribs late, so a spiral band of ornament winds up the shaft.",
   "base": {
     "shape": "column_classic"

@@ -1,5 +1,5 @@
 {
-  "name": "Smooth (classic Catmull-Clark)",
+  "name": "cube_smooth",
   "description": "All weights zero: standard Catmull-Clark. The cube relaxes to a sphere-like limit surface.",
   "base": {
     "shape": "cube"

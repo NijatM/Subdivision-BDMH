@@ -1,8 +1,8 @@
 """Render presets to PNG without the interactive UI.
 
-    python render.py presets/fig3_left.json                 -> renders/fig3_left.png
+    python render.py presets/cube_six_arms.json             -> renders/cube_six_arms.png
     python render.py presets/*.json --depth 6 --montage all.png
-    python render.py presets/fig3_right.json --turntable renders/fig3_right.gif   (or .mp4)
+    python render.py presets/cube_petal_flower.json --turntable renders/cube_petal_flower.gif   (or .mp4)
 """
 
 from __future__ import annotations
@@ -62,7 +62,7 @@ def main():
         h, w = tiles[0].shape[:2]
         cols = min(args.cols, len(tiles))
         rows = -(-len(tiles) // cols)
-        bg = np.array(THEMES[args.theme]["background"] + (1.0,))[: tiles[0].shape[2]] * 255
+        bg = np.array(THEMES[args.theme]["screen"] + (255,))[: tiles[0].shape[2]]
         canvas = np.empty((rows * h, cols * w, tiles[0].shape[2]), np.uint8)
         canvas[:] = bg.astype(np.uint8)
         for i, t in enumerate(tiles):

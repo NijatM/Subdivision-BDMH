@@ -1,6 +1,6 @@
 {
-  "name": "Panel \u2014 grotto relief",
-  "description": "The Fig. 3-left recipe (corners pulled in hard) on a locked 3x3 panel: a craggy, cave-like relief that still tiles.",
+  "name": "panel_grotto",
+  "description": "The six-arms recipe (corners pulled in hard) on a locked 3x3 panel: a craggy, cave-like relief that still tiles.",
   "base": {
     "shape": "panel",
     "nx": 3,

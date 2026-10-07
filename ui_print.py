@@ -21,15 +21,13 @@ from hansmeyer import vessel
 
 from hansmeyer.printprep import (UP_KEYS, PrintSettings, best_up, finest_voxel, grid_for, prepare_arrays,
                                  prepare_exact_arrays, scale_for, stl_bytes, up_rotation, write_stl)
-from hansmeyer.view import turntable
-from ui_common import WARN, toggle_button, wrapped_colored
+from hansmeyer.view import MESH_COLOR, helper, turntable
+import ui_style as ui
 
 PREVIEW = "print model"
 PLANES = "cut planes"
-OK = (0.45, 0.85, 0.55, 1.0)
-GREY = (0.7, 0.7, 0.7, 1.0)
-BASE = (0.86, 0.85, 0.82)
-RED = (0.9, 0.25, 0.2)
+BASE = MESH_COLOR
+RED = (0.9, 0.25, 0.2)  # data colour: surfaces that need support / are too thin
 PART_COLOURS = np.array([(0.90, 0.62, 0.30), (0.40, 0.65, 0.90), (0.55, 0.80, 0.45), (0.85, 0.45, 0.70),
                          (0.95, 0.85, 0.35), (0.50, 0.85, 0.85), (0.75, 0.60, 0.95), (0.95, 0.50, 0.45)])
 NOZZLES = [0.25, 0.4, 0.6, 0.8]
@@ -37,16 +35,16 @@ PRINTERS = [("Bambu Lab A1 / P1S / X1C", (256.0, 256.0, 256.0)), ("Bambu Lab A1 
             ("Prusa MK4 / MK4S", (250.0, 210.0, 220.0)), ("Prusa CORE One", (250.0, 220.0, 270.0)),
             ("Prusa MINI", (180.0, 180.0, 180.0)), ("Custom", None)]
 SIZE_AXES = [("longest", "longest side"), ("height", "height (Z)"), ("width", "width (X)"), ("depth", "depth (Y)")]
-QUALITY = [("Draft", 1.0, "voxel = nozzle width: fastest, smallest files"),
-           ("Standard", 0.75, "a good match for FDM detail"),
-           ("Fine", 0.5, "smoother surface, larger files; detail below the nozzle width still won't print")]
-CUT_PRESETS = [("Whole", (None, None, None), "one piece"),
-               ("2 halves", (None, None, -1.0), "one horizontal cut at the widest section: both halves print "
-                                                "cut face down, with far less support"),
-               ("4 quarters", (0.5, 0.5, None), "two vertical cuts through the middle: four pillars that "
-                                                  "assemble into the whole, like the four corners of a cage"),
-               ("8 pieces", (0.5, 0.5, -1.0), "all three cuts")]
-AXIS_LABELS = ("across X (width)", "across Y (depth)", "across Z (height)")
+QUALITY = [("draft", 1.0, "voxel = nozzle width: fastest, smallest files"),
+           ("standard", 0.75, "a good match for FDM detail"),
+           ("fine", 0.5, "smoother surface, larger files; detail below the nozzle width still won't print")]
+CUT_PRESETS = [("whole", (None, None, None), "One piece."),
+               ("2 halves", (None, None, -1.0), "One horizontal cut at the widest section: both halves print "
+                                                "cut face down, with far less support."),
+               ("4 quarters", (0.5, 0.5, None), "Two vertical cuts through the middle: four pillars that "
+                                                  "assemble into the whole, like the four corners of a cage."),
+               ("8 pieces", (0.5, 0.5, -1.0), "All three cuts.")]
+AXIS_LABELS = ("across x", "across y", "across z")
 GRID_LIMITS = [400, 600, 800, 1000]
 BYTES_PER_VOXEL = 9.0  # peak memory of the voxel steps, measured on a 613^3 grid
 
@@ -101,6 +99,7 @@ class PrintPanel:
         self._planes_key = None
         self.defaults_for_shape_pending = True  # choose up axis / base once the input mesh exists
         self.tt = {"frames": 72, "seconds": 6.0, "size": 640, "elevation": 20.0, "format": 0}
+        self.advanced = False
 
     # ------------------------------------------------------------- helpers
     def _design_key(self):
@@ -286,8 +285,11 @@ class PrintPanel:
             quads.append(q)
         V = np.concatenate(quads) @ R  # printer frame -> model frame
         F = np.arange(len(V)).reshape(-1, 4)
-        pm = ps.register_surface_mesh(PLANES, V, F, color=(0.95, 0.55, 0.15), transparency=0.35, smooth_shade=False)
+        pm = ps.register_surface_mesh(PLANES, V, F, color=helper("plane"), transparency=0.22, smooth_shade=False)
         pm.set_back_face_policy("identical")
+
+    def theme_changed(self):
+        self._planes_key = None  # redraw the cut planes in the new theme's colour
 
     def _widest_fraction(self) -> float:
         """Where the last run put a 'widest section' height cut (0.5 until one ran)."""
@@ -355,7 +357,7 @@ class PrintPanel:
         self.view = "layout"
         self.show_print()
         n = len(result.parts)
-        self.app.status = f"Print model ready in {result.seconds:.0f}s" + (f": {n} parts" if n > 1 else "")
+        self.app.status = f"print model ready in {result.seconds:.0f}s" + (f": {n} parts" if n > 1 else "")
 
     def export(self):
         r = self.result
@@ -380,41 +382,38 @@ class PrintPanel:
         if bad:
             self.app.error = f"Exported file(s) did not verify: {', '.join(bad)}"
         else:
-            self.app.status = (f"Exported {n} file(s) to exports/: verified complete and watertight")
+            self.app.status = f"exported {n} file(s) to exports/: verified complete and watertight"
 
     # ------------------------------------------------------------------ ui
     def ui(self):
-        self.poll()
-        is_open = psim.CollapsingHeader("Print (FDM, watertight STL)")
-        if is_open:
-            self.print_ui()
-        self.update_planes(is_open)
-        if psim.CollapsingHeader("Turntable (GIF / MP4)"):
-            self.turntable_ui()
-
-    def print_ui(self):
         if self.vessel_mode():
             self.vessel_print_ui()
         else:
-            psim.TextWrapped("Rebuilds the form as closed solids a slicer can read: self-intersections merged, open "
-                             "skins thickened, sized in mm. Cut it into parts to print with far less support.")
+            ui.explain("Rebuilds the form as closed solids a slicer can read: self-intersections merged, open skins "
+                       "thickened, sized in mm. Cutting it into parts lets each print with far less support.")
             self.printer_ui()
             self.size_ui()
             self.orientation_ui()
             self.underside_ui()
             self.cut_ui()
             self.resolution_ui()
-            self.advanced_ui()
-        psim.Spacing()
+            ui.gap(4.0)
+            _, self.advanced = ui.check("advanced settings", self.advanced, "pradv",
+                                        "Exact voxel size, grid limit, wall, smoothing, mesh detail, solid base.")
+            if self.advanced:
+                self.advanced_ui()
+        ui.gap(10.0)
         if self.busy():
-            psim.TextColored(WARN, f"working in a background process... {time.perf_counter() - self.job['started']:.0f}s")
-        elif psim.Button("Prepare print model"):
-            self.start()
-        psim.SetItemTooltip("Bakes the full depth first, then runs in a separate process (the app stays responsive).")
-        psim.SameLine()
-        if psim.Button("Auto settings for this shape"):
-            self.defaults_for_shape()
-        psim.SetItemTooltip("Panels lie flat on a solid base; everything else stands up (model Y up).")
+            ui.warn(f"working in a background process … {time.perf_counter() - self.job['started']:.0f}s")
+        else:
+            w = psim.GetContentRegionAvail()[0]
+            if ui.button("prepare print model", "prgo", "Bakes the full depth first, then runs in a separate process "
+                         "(the app stays responsive).", width=0.62 * w, kind="primary"):
+                self.start()
+            psim.SameLine(0.0, 6.0)
+            if ui.button("auto settings", "prauto", "Panels lie flat on a solid base; everything else stands up "
+                                                    "(model Y up).", width=psim.GetContentRegionAvail()[0]):
+                self.defaults_for_shape()
         self.result_ui()
 
     def vessel_height(self, D: float) -> float:
@@ -429,226 +428,206 @@ class PrintPanel:
             v["diameter_mm"] = D
             self.app.edited()  # walls are in mm: the geometry is rebuilt for the new size
 
+    def _size_buttons(self, sizes, current, key, setter, fit):
+        for mm in sizes:
+            if ui.toggle(f"{mm}", abs(current - mm) < 1e-6, f"{key}{mm}", f"{mm} mm"):
+                setter(float(mm))
+            psim.SameLine(0.0, 4.0)
+        if ui.button("fit bed", f"{key}fit", "The largest size that fits the printer bed."):
+            fit()
+
     def vessel_print_ui(self):
         v = self.app.design.vessel
-        psim.TextWrapped("Vessel: the mesh is already one clean, closed solid, so it is exported exactly - no "
-                         "voxel remesh - and the outside stays a perfect sphere.")
+        ui.explain("The vessel is already one clean, closed solid, so it is exported exactly (no voxel remesh) and "
+                   "the outside stays a perfect sphere.")
         self.printer_ui()
-        psim.SeparatorText("Size")
-        psim.PushItemWidth(120)
-        changed, D = psim.InputFloat("diameter (mm)##printvessel", v["diameter_mm"], 1.0, 10.0, "%.0f")
-        psim.PopItemWidth()
+        ui.subhead("size")
+        changed, D = ui.input_float("diameter", v["diameter_mm"], 1.0, 10.0, "%.0f mm",
+                                    "Outer diameter of the sphere. Type a value or use - / + (Ctrl: steps of 10). "
+                                    "The walls stay as set in mm (0.8 mm windows stay 0.8 mm at any size).", "prvdiam")
         if changed:
             self.set_vessel_size(D)
-        psim.SetItemTooltip("Outer diameter of the sphere. Type a value or use - / + (Ctrl: steps of 10).\n"
-                            "The walls stay as set in mm (0.8 mm windows stay 0.8 mm at any size).")
-        for mm in (80, 100, 120, 150, 200):
-            if toggle_button(f"{mm}##vsize{mm}", abs(v["diameter_mm"] - mm) < 1e-6):
-                self.set_vessel_size(mm)
-            psim.SameLine()
-        if psim.Button("Fit bed##vessel"):
+        ui.row_label("")
+
+        def fit():
             bed = self.bed() - 4.0
-            h_per_d = self.vessel_height(1.0)
-            self.set_vessel_size(np.floor(min(bed[0], bed[1], bed[2] / max(h_per_d, 1e-9))))
-        psim.SetItemTooltip("Largest diameter that fits the printer bed, standing on its rim.")
+            self.set_vessel_size(np.floor(min(bed[0], bed[1], bed[2] / max(self.vessel_height(1.0), 1e-9))))
+
+        self._size_buttons((80, 100, 120, 150, 200), v["diameter_mm"], "prvs", self.set_vessel_size, fit)
         D = v["diameter_mm"]
         H = self.vessel_height(D)
-        dims = np.array([D, D, H])
-        ok = self.fits(dims, any_way=False)
-        wrapped_colored(OK if ok else WARN, f"W {D:.0f} x D {D:.0f} x H {H:.0f} mm standing on the rim"
-                        + ("  - fits the bed" if ok else "  - bigger than the bed"))
+        ok = self.fits(np.array([D, D, H]), any_way=False)
+        ui.value("print size", f"{D:.0f} x {D:.0f} x {H:.0f} mm", "hi" if ok else "warn", "W x D x H, on the rim.")
+        if not ok:
+            ui.warn("Bigger than the bed.")
         self.orientation_ui()
         if self.s.up == "-y":
-            wrapped_colored(GREY, "Upside down: the opening's rim stands on the plate, the dome prints on top.")
+            ui.note("Upside down: the opening's rim stands on the plate, the dome prints on top.")
 
     def printer_ui(self):
-        psim.SeparatorText("Printer")
-        psim.PushItemWidth(360)
-        names = [n if d is None else f"{n}  -  {d[0]:.0f} x {d[1]:.0f} x {d[2]:.0f}" for n, d in PRINTERS]
-        changed, self.printer_idx = psim.Combo("bed##printer", self.printer_idx, names)
-        psim.PopItemWidth()
+        ui.subhead("printer", top=0.0)
+        changed, self.printer_idx = ui.combo("printer", self.printer_idx, [n for n, _ in PRINTERS],
+                                             "Sets the build volume the size and the parts are checked against.",
+                                             "prbed")
         if changed:
             self.app.remember("printer", self.printer_idx)
-        if PRINTERS[self.printer_idx][1] is None:
-            changed, v = psim.InputFloat3("bed W x D x H (mm)", self.custom_bed, "%.0f")
+        if PRINTERS[self.printer_idx][1] is not None:
+            b = self.bed()
+            ui.value("bed", f"{b[0]:.0f} x {b[1]:.0f} x {b[2]:.0f} mm", "dim")
+        else:
+            changed, v = ui.input_float3("W x D x H", self.custom_bed, "%.0f", "Build volume in mm.", "prcustom")
             if changed:
                 self.custom_bed = [max(20.0, float(x)) for x in v]
                 self.app.remember("custom_bed", self.custom_bed)
-        psim.PushItemWidth(90)
-        _, self.nozzle_idx = psim.Combo("nozzle", self.nozzle_idx, [f"{n} mm" for n in NOZZLES])
-        psim.PopItemWidth()
+        _, self.nozzle_idx = ui.choice("nozzle", [(i, f"{n}") for i, n in enumerate(NOZZLES)], self.nozzle_idx,
+                                       "prnoz", "Nozzle diameter in mm: sets the resolution choices below.")
 
     def size_ui(self):
         s = self.s
-        psim.SeparatorText("Size")
+        ui.subhead("size")
         keys = [k for k, _ in SIZE_AXES]
-        psim.PushItemWidth(120)
-        changed, i = psim.Combo("##sizeaxis", keys.index(s.size_axis) if s.size_axis in keys else 0,
-                                [label for _, label in SIZE_AXES])
-        psim.PopItemWidth()
+        changed, i = ui.combo("measured", keys.index(s.size_axis) if s.size_axis in keys else 0,
+                              [label for _, label in SIZE_AXES], "Which dimension the size below sets.", "prsaxis")
         if changed:
             s.size_axis = keys[i]
-        psim.SameLine()
-        psim.PushItemWidth(120)
-        _, v = psim.InputFloat("mm##size", s.size_mm, 1.0, 10.0, "%.1f")
-        psim.PopItemWidth()
+        _, v = ui.input_float("size", s.size_mm, 1.0, 10.0, "%.1f mm",
+                              "Type a value, or use - / + (hold Ctrl for steps of 10).", "prsize")
         s.size_mm = float(min(max(v, 5.0), 2000.0))
-        psim.SetItemTooltip("Type a value, or use - / + (hold Ctrl for steps of 10).")
-        for mm in (50, 100, 150, 200):
-            if toggle_button(f"{mm}##size{mm}", abs(s.size_mm - mm) < 1e-6):
-                s.size_mm = float(mm)
-            psim.SameLine()
-        if psim.Button("Fit bed"):
-            self.fit_to_bed()
-        psim.SetItemTooltip("Largest size that fits the printer bed (cut parts are checked one by one).")
+        ui.row_label("")
+
+        def setter(mm):
+            s.size_mm = mm
+
+        self._size_buttons((50, 100, 150, 200), s.size_mm, "prs", setter, self.fit_to_bed)
         dims = self.dims_now()
         if dims is None:
             return
         bed = self.bed()
-        text = f"W {dims[0]:.1f} x D {dims[1]:.1f} x H {dims[2]:.1f} mm"
+        text = f"{dims[0]:.1f} x {dims[1]:.1f} x {dims[2]:.1f} mm"
         if self.n_parts() == 1:
             ok = self.fits(dims, any_way=False)
-            psim.TextColored(OK if ok else WARN, text + ("  - fits the bed" if ok else
-                             f"  - bigger than the {bed[0]:.0f} x {bed[1]:.0f} x {bed[2]:.0f} bed: cut it or Fit bed"))
+            ui.value("print size", text, "hi" if ok else "warn", "W x D x H")
+            if not ok:
+                ui.warn(f"Bigger than the {bed[0]:.0f} x {bed[1]:.0f} x {bed[2]:.0f} bed: cut it, or fit bed.")
         else:
-            psim.TextColored(GREY, text + " assembled")
+            ui.value("assembled", text, "fg", "W x D x H")
             part = self.part_dims_estimate(dims)
             ok = self.fits(part, any_way=True)
-            psim.TextColored(OK if ok else WARN, f"largest part ~{part[0]:.0f} x {part[1]:.0f} x {part[2]:.0f} mm"
-                             + ("  - fits the bed" if ok else "  - too big for the bed: Fit bed or add a cut"))
+            ui.value("largest part", f"~{part[0]:.0f} x {part[1]:.0f} x {part[2]:.0f} mm", "hi" if ok else "warn")
+            if not ok:
+                ui.warn("Too big for the bed: fit bed, or add a cut.")
 
     def orientation_ui(self):
         s = self.s
-        psim.SeparatorText("Orientation")
-        psim.Text("Up:")
-        for key in UP_KEYS:
-            psim.SameLine()
-            if toggle_button(f"{_up_label(key)}##up", str(s.up) == key or (key == "y" and s.up == "+y")):
-                s.up = key
-        psim.SameLine()
-        if psim.Button("Auto##up") and self._mesh() is not None:
+        ui.subhead("orientation")
+        cur = "y" if s.up == "+y" else str(s.up)
+        changed, up = ui.choice("up", [(k, _up_label(k)) for k in UP_KEYS], cur, "prup",
+                                "Which model axis points up on the printer. With cuts, this sets the cut directions; "
+                                "each part is then turned for printing on its own.")
+        if changed:
+            s.up = up
+        ui.row_label("")
+        if ui.button("auto: least support", "prupauto", "Picks the up axis with the least overhang.",
+                     enabled=self._mesh() is not None):
             m = self._mesh()
             s.up = best_up(m.V, m.triangles(), float(self.support_deg))
-            self.app.status = f"Least support with model {_up_label(s.up)} up"
-        psim.SetItemTooltip("Which model axis points up on the printer. Auto picks the one with the least overhang.\n"
-                            "With cuts, this sets the cut directions; each part is then turned for printing on its own.")
+            self.app.status = f"least support with model {_up_label(s.up)} up"
 
     def underside_ui(self):
         s = self.s
-        psim.SeparatorText("Undersides")
-        on = s.undersides > 0
-        changed, on = psim.Checkbox("self-supporting undersides", on)
+        ui.subhead("undersides")
+        changed, on = ui.check("self-supporting undersides", s.undersides > 0, "prunder",
+                               "Fills below every overhang with a smooth keel no flatter than the angle, so the print "
+                               "needs (almost) no support. Upward-facing surfaces keep all their detail; horizontal "
+                               "holes get pointed tops. Set the slicer's threshold angle below this.")
         if changed:
             s.undersides = 45.0 if on else 0.0
-        psim.SetItemTooltip("Fills below every overhang with a smooth keel no flatter than the angle, so the\n"
-                            "print needs (almost) no support. Upward-facing surfaces keep all their detail;\n"
-                            "horizontal holes get pointed tops. Set the slicer's threshold angle below this.")
         if s.undersides > 0:
-            psim.SameLine()
-            psim.PushItemWidth(100)
-            _, s.undersides = psim.SliderFloat("angle##under", s.undersides, 30.0, 70.0, "%.0f deg")
-            psim.PopItemWidth()
-        psim.PushItemWidth(100)
-        _, s.foot_mm = psim.SliderFloat("flat foot (mm)", s.foot_mm, 0.0, 5.0, "%.1f")
-        psim.PopItemWidth()
-        psim.SetItemTooltip("Trims the bottom flat by this much, so the print stands on a foot instead of a point.")
+            _, s.undersides = ui.slider("keel angle", s.undersides, 30.0, 70.0, "%.0f deg", key="prkeel")
+        _, s.foot_mm = ui.slider("flat foot", s.foot_mm, 0.0, 5.0, "%.1f mm",
+                                 "Trims the bottom flat by this much, so the print stands on a foot instead of a "
+                                 "point.", "prfoot")
 
     def cut_ui(self):
         s = self.s
-        psim.SeparatorText("Cut into parts")
-        current = (s.cut_x, s.cut_y, s.cut_z)
-        for i, (label, cuts, tip) in enumerate(CUT_PRESETS):
-            if i:
-                psim.SameLine()
-            if toggle_button(f"{label}##cut", tuple(f is not None for f in current) == tuple(f is not None for f in cuts)):
-                s.cut_x, s.cut_y, s.cut_z = cuts
-            psim.SetItemTooltip(tip)
-        names = ("cut_x", "cut_y", "cut_z")
-        for a, attr in enumerate(names):
+        ui.subhead("cut into parts")
+        current = tuple(f is not None for f in (s.cut_x, s.cut_y, s.cut_z))
+        options = [(i, label) for i, (label, _, _) in enumerate(CUT_PRESETS)]
+        cur = next((i for i, (_, cuts, _) in enumerate(CUT_PRESETS) if tuple(f is not None for f in cuts) == current), -1)
+        changed, i = ui.segmented(options, cur, "prcut", helps=[tip for _, _, tip in CUT_PRESETS])
+        if changed:
+            s.cut_x, s.cut_y, s.cut_z = CUT_PRESETS[i][1]
+        for a, attr in enumerate(("cut_x", "cut_y", "cut_z")):
             f = getattr(s, attr)
-            on = f is not None
-            changed, on = psim.Checkbox(f"{AXIS_LABELS[a]}##cut{a}", on)
+            changed, on = ui.check(AXIS_LABELS[a], f is not None, f"prcut{a}")
             if changed:
                 setattr(s, attr, (-1.0 if a == 2 else 0.5) if on else None)
                 f = getattr(s, attr)
             if f is None:
                 continue
-            psim.SameLine()
             if a == 2:
-                changed, widest = psim.Checkbox("widest##cutw", f < 0)
-                psim.SetItemTooltip("Cut where the form is widest: the biggest flat face for both halves to stand on.")
+                psim.SameLine(0.0, 16.0)
+                changed, widest = ui.check("at the widest", f < 0, "prcutw",
+                                           "Cut where the form is widest: the biggest flat face for both halves to "
+                                           "stand on.")
                 if changed:
                     s.cut_z = -1.0 if widest else round(self._widest_fraction(), 2)
                 if s.cut_z < 0:
                     continue
-                psim.SameLine()
-            psim.PushItemWidth(110)
-            _, pct = psim.SliderFloat(f"position##cutp{a}", 100 * getattr(s, attr), 5.0, 95.0, "%.0f %%")
-            psim.PopItemWidth()
+            _, pct = ui.slider("position", 100 * getattr(s, attr), 5.0, 95.0, "%.0f %%", key=f"prcutp{a}")
             setattr(s, attr, pct / 100.0)
         if self.n_parts() == 1:
             return
-        psim.TextDisabled(f"-> {self.n_parts()} parts. The orange planes on the form show the cuts.")
-        _, s.pins = psim.Checkbox("alignment pin holes", s.pins)
-        psim.SetItemTooltip("Matching blind holes in both faces of every joint, for gluing the parts in register.\n"
-                            "2.0 mm takes a piece of 1.75 mm filament as the pin.")
+        ui.push_font("small")
+        ui.note(f"{self.n_parts()} parts. The planes over the form show the cuts.")
+        ui.pop_font()
+        _, s.pins = ui.check("alignment pin holes", s.pins, "prpins",
+                             "Matching blind holes in both faces of every joint, for gluing the parts in register. "
+                             "2.0 mm takes a piece of 1.75 mm filament as the pin.")
         if s.pins:
-            psim.SameLine()
-            psim.PushItemWidth(70)
-            _, s.pin_mm = psim.InputFloat("dia##pin", s.pin_mm, 0.0, 0.0, "%.2f")
-            psim.SameLine()
-            _, s.pin_depth_mm = psim.InputFloat("depth (mm)##pin", s.pin_depth_mm, 0.0, 0.0, "%.1f")
-            psim.PopItemWidth()
+            _, s.pin_mm = ui.input_float("pin diameter", s.pin_mm, 0.0, 0.0, "%.2f mm", key="prpind")
+            _, s.pin_depth_mm = ui.input_float("pin depth", s.pin_depth_mm, 0.0, 0.0, "%.1f mm", key="prpinz")
             s.pin_mm = float(min(max(s.pin_mm, 0.5), 20.0))
             s.pin_depth_mm = float(min(max(s.pin_depth_mm, 1.0), 50.0))
-        auto = s.part_up == "auto"
-        if psim.RadioButton("turn each part for least support", auto):
-            s.part_up = "auto"
-        psim.SameLine()
-        if psim.RadioButton("print as assembled", not auto):
-            s.part_up = "assembly"
+        _, s.part_up = ui.choice("each part", [("auto", "least support"), ("assembly", "as assembled")], s.part_up,
+                                 "prpartup", helps=["Turn each part on its own for the least support.",
+                                                    "Print every part in its assembled orientation."])
 
     def resolution_ui(self):
         s = self.s
-        psim.SeparatorText("Resolution")
+        ui.subhead("resolution")
         nozzle = NOZZLES[self.nozzle_idx]
         finest = self.effective_voxel() if self._mesh() is None else max(finest_voxel(self._mesh(), s), 0.05)
-        for i, (label, k, tip) in enumerate(QUALITY):
-            v = round(k * nozzle, 3)
-            if i:
-                psim.SameLine()
-            if toggle_button(f"{label} {v:.2f}##q", abs(s.voxel_mm - v) < 1e-6):
-                s.voxel_mm = v
-            psim.SetItemTooltip(f"{tip}.")
-        psim.SameLine()
-        if toggle_button(f"Max {finest:.2f}##q", abs(s.voxel_mm - finest) < 1e-6 or s.voxel_mm < finest - 1e-9):
-            s.voxel_mm = round(finest, 3)
-        psim.SetItemTooltip("The finest the grid limit allows at this size (raise 'grid limit' under Advanced).")
+        options = [(round(k * nozzle, 3), label) for label, k, _ in QUALITY] + [(round(finest, 3), "max")]
+        cur = next((v for v, _ in options if abs(s.voxel_mm - v) < 1e-6), None)
+        if cur is None and s.voxel_mm < finest - 1e-9:
+            cur = round(finest, 3)
+        changed, v = ui.segmented(options, cur, "prq", helps=[f"{v:.2f} mm voxels: {tip}." for (v, _), (_, _, tip)
+                                                             in zip(options, QUALITY)]
+                                  + [f"{finest:.2f} mm: the finest the grid limit allows at this size."])
+        if changed:
+            s.voxel_mm = v
         eff = self.effective_voxel()
         est = self.estimate()
-        line = f"detail {eff:.2f} mm"
+        ui.value("detail", f"{eff:.2f} mm")
         if est is not None:
             tris, nbytes, ram, secs = est
-            line += f"  |  ~{tris / 1e6:.1f} M triangles  |  STL ~{nbytes / 1e6:.0f} MB"
-            psim.Text(line)
+            ui.value("output", f"~{tris / 1e6:.1f} M triangles · STL ~{nbytes / 1e6:.0f} MB")
             total = _ram_bytes()
             heavy = total is not None and ram > 0.6 * total
-            psim.TextColored(WARN if heavy else GREY, f"needs ~{_bytes(ram)} RAM"
-                             + (f", ~{secs / 60:.1f} min" if secs is not None and secs > 90 else
-                                (f", ~{secs:.0f} s" if secs is not None else ""))
-                             + ("  - close to this computer's memory" if heavy else ""))
-        else:
-            psim.Text(line)
+            ui.value("needs", f"~{_bytes(ram)} RAM" + (f" · ~{secs / 60:.1f} min" if secs is not None and secs > 90 else
+                                                       (f" · ~{secs:.0f} s" if secs is not None else "")),
+                     "warn" if heavy else "fg")
+            if heavy:
+                ui.warn("Close to this computer's memory.")
         if eff > s.voxel_mm + 1e-9:
-            psim.TextColored(WARN, f"Limited to {eff:.2f} mm by the grid limit ({s.max_grid} voxels along the "
-                                   f"longest side). Raise it under Advanced, or print smaller.")
+            ui.warn(f"Limited to {eff:.2f} mm by the grid limit ({s.max_grid} voxels along the longest side). Raise "
+                    "it under advanced settings, or print smaller.")
 
     def advanced_ui(self):
         s = self.s
-        if not psim.TreeNode("Advanced##print"):
-            return
-        _, s.voxel_mm = psim.SliderFloat("voxel (mm)", s.voxel_mm, 0.05, 1.5, "%.3f")
-        psim.SetItemTooltip("Exact resolution of the print model (the buttons above set this).")
+        _, s.voxel_mm = ui.slider("voxel", s.voxel_mm, 0.05, 1.5, "%.3f mm",
+                                  "Exact resolution of the print model (the buttons above set this).", "prvox")
         labels = []
         dims = self.dims_now()
         for g in GRID_LIMITS:
@@ -656,30 +635,26 @@ class PrintPanel:
             if dims is not None:
                 v = max(s.voxel_mm, float(dims.max()) / g)
                 vox = np.prod(np.ceil(dims / v) + 12)
-                text += f"  (finest {float(dims.max()) / g:.2f} mm, ~{_bytes(vox * BYTES_PER_VOXEL)} RAM)"
+                text += f"  ({float(dims.max()) / g:.2f} mm, ~{_bytes(vox * BYTES_PER_VOXEL)})"
             labels.append(text)
         idx = GRID_LIMITS.index(s.max_grid) if s.max_grid in GRID_LIMITS else 1
-        psim.PushItemWidth(260)
-        _, idx = psim.Combo("grid limit", idx, labels)
-        psim.PopItemWidth()
+        _, idx = ui.combo("grid limit", idx, labels, "Most voxels along the longest side. Higher = finer detail on big "
+                                                     "prints, more memory.", "prgrid")
         s.max_grid = GRID_LIMITS[idx]
-        psim.SetItemTooltip("Most voxels along the longest side. Higher = finer detail on big prints, more memory.")
-        _, s.wall_mm = psim.SliderFloat("min wall (mm)", s.wall_mm, 0.4, 5.0, "%.2f")
-        psim.SetItemTooltip("Open or porous forms are printed as a skin of this thickness (>= 2 x nozzle).")
-        _, s.smooth = psim.SliderInt("smoothing", int(s.smooth), 0, 30)
-        _, s.soften = psim.SliderFloat("soften voxels", s.soften, 0.0, 1.5, "%.2f")
-        psim.SetItemTooltip("Blurs the voxel solid before the surface is extracted: removes stair-steps "
-                            "(0 = raw voxels).")
-        _, d = psim.Combo("mesh detail", 0 if s.detail == 1 else 1, ["full", "half (~4x smaller file)"])
-        s.detail = 1 if d == 0 else 2
-        _, s.base = psim.Checkbox("solid base (reliefs)", s.base)
-        psim.SetItemTooltip("Fill everything below the form down to a flat plate: turns a relief panel into a tile.")
+        _, s.wall_mm = ui.slider("min wall", s.wall_mm, 0.4, 5.0, "%.2f mm",
+                                 "Open or porous forms are printed as a skin of this thickness (>= 2 x nozzle).",
+                                 "prwall")
+        _, s.smooth = ui.slider_int("smoothing", int(s.smooth), 0, 30, key="prsmooth")
+        _, s.soften = ui.slider("soften voxels", s.soften, 0.0, 1.5, "%.2f",
+                                "Blurs the voxel solid before the surface is extracted: removes stair-steps (0 = raw "
+                                "voxels).", "prsoft")
+        _, d = ui.choice("mesh detail", [(1, "full"), (2, "half")], s.detail, "prdetail",
+                         helps=["Every voxel cell.", "About 4x smaller files."])
+        s.detail = d
+        _, s.base = ui.check("solid base (reliefs)", s.base, "prbase",
+                             "Fill everything below the form down to a flat plate: turns a relief panel into a tile.")
         if s.base:
-            psim.SameLine()
-            psim.PushItemWidth(90)
-            _, s.base_mm = psim.SliderFloat("thickness##base", s.base_mm, 0.5, 10.0, "%.1f")
-            psim.PopItemWidth()
-        psim.TreePop()
+            _, s.base_mm = ui.slider("base thickness", s.base_mm, 0.5, 10.0, "%.1f mm", key="prbasemm")
 
     def result_ui(self):
         r = self.result
@@ -687,99 +662,100 @@ class PrintPanel:
             return
         stale = self.result_key != self._design_key()
         n = len(r.parts)
-        psim.SeparatorText("Print model")
-        psim.TextColored(WARN if stale else OK,
-                         ("STALE (form or settings changed) - " if stale else "")
-                         + (f"{n} parts, " if n > 1 else "")
-                         + f"{r.dims_mm[0]:.1f} x {r.dims_mm[1]:.1f} x {r.dims_mm[2]:.1f} mm"
-                         + (" assembled" if n > 1 else "") + f", {len(r.F):,} triangles")
+        ui.subhead("print model")
+        ui.begin_card("prresult")
+        ui.spaced("STALE: FORM OR SETTINGS CHANGED" if stale else "READY", "warn" if stale else "dim")
+        ui.gap(2.0)
+        ui.push_font("medium")
+        ui.text((f"{n} parts · " if n > 1 else "") + f"{r.dims_mm[0]:.1f} x {r.dims_mm[1]:.1f} x {r.dims_mm[2]:.1f} mm",
+                "hi")
+        ui.pop_font()
         mass = f"~{r.volume_cm3 * 1.24:.0f} g PLA (all wall)" if r.voxel_mm == 0 else f"~{r.mass_g():.0f} g PLA at 20% infill"
-        psim.Text(f"volume {r.volume_cm3:.1f} cm3  {mass}, "
-                  + (f"detail {r.voxel_mm:.2f} mm" if r.voxel_mm > 0 else "exact mesh")
-                  + (f", {r.pins} pin holes" if n > 1 else ""))
+        ui.push_font("small")
+        ui.wrap(f"{len(r.F):,} triangles · {r.volume_cm3:.1f} cm3 · {mass} · "
+                + (f"detail {r.voxel_mm:.2f} mm" if r.voxel_mm > 0 else "exact mesh")
+                + (f" · {r.pins} pin holes" if n > 1 else ""), "dim")
         need, free = stl_bytes(r), shutil.disk_usage(self.app.root).free
-        psim.TextColored(WARN if free < need + 64e6 else GREY, f"STL ~{need / 1e6:.0f} MB, {free / 1e9:.1f} GB free on disk")
+        ui.wrap(f"STL ~{need / 1e6:.0f} MB · {free / 1e9:.1f} GB free on disk", "warn" if free < need + 64e6 else "dim")
+        ui.pop_font()
+        ui.end_card()
         for note in r.notes:
-            psim.TextColored(WARN, note)
+            ui.warn(note)
         if r.thin_fraction <= 0.02:
-            psim.TextColored(OK, "Thickness check passed")
+            ui.ok("Thickness check passed.")
 
-        # support check
-        psim.PushItemWidth(120)
-        changed, self.support_deg = psim.SliderInt("support threshold angle", int(self.support_deg), 5, 85, "%d deg")
-        psim.PopItemWidth()
-        psim.SetItemTooltip("Same as the slicer's support 'threshold angle' (Bambu / Orca / Prusa): downward surfaces\n"
-                            "flatter than this, measured from the horizontal, get support. 30 = only flat overhangs;\n"
-                            "60 = steeper ones too. A higher number means MORE support, not less.")
+        ui.subhead("support check")
+        changed, self.support_deg = ui.slider_int("threshold", int(self.support_deg), 5, 85, "%d deg",
+                                                  "Same as the slicer's support 'threshold angle' (Bambu / Orca / "
+                                                  "Prusa): downward surfaces flatter than this, measured from the "
+                                                  "horizontal, get support. 30 = only flat overhangs; 60 = steeper "
+                                                  "ones too. A higher number means MORE support, not less.", "prthr")
         if changed and self.colour == "support":
             self.recolour()
         _, per, share = self.overhang()
         total = sum(per)
-        psim.TextColored(OK if share < 0.03 else WARN,
-                         f"~{total:.0f} cm2 ({100 * share:.1f}% of the surface) needs support (red)")
+        ui.value("needs support", f"~{total:.0f} cm2 ({100 * share:.1f}% of the surface)",
+                 "hi" if share < 0.03 else "warn", "Shown red on the print model.")
         if n == 1 and share >= 0.03:
-            psim.TextWrapped("Mostly the inside of the dome's top (its ceiling): slicers usually bridge it, or "
-                             "lower the relief depth there." if self.vessel_mode() else
-                             "Lots of support: cut it into parts (2 halves usually helps most), or try another "
-                             "up direction.")
+            ui.note("Mostly the inside of the dome's top (its ceiling): slicers usually bridge it, or lower the relief "
+                    "depth there." if self.vessel_mode() else
+                    "Lots of support: cut it into parts (2 halves usually helps most), or try another up direction.")
         bed = self.bed()
         if n > 1:
             for i, p in enumerate(r.parts):
                 ok = self.fits(np.array(p.dims_mm), any_way=False)
-                psim.TextColored(OK if ok else WARN,
-                                 f"{i + 1}. {p.name}: {p.dims_mm[0]:.0f} x {p.dims_mm[1]:.0f} x {p.dims_mm[2]:.0f} mm, "
-                                 f"prints {_how_printed(p)}, support ~{per[i]:.0f} cm2"
-                                 + ("" if ok else " - too big for the bed")
-                                 + (f", {p.shells} loose pieces" if p.shells > 1 else ""))
+                ui.wrap(f"{i + 1}. {p.name}: {p.dims_mm[0]:.0f} x {p.dims_mm[1]:.0f} x {p.dims_mm[2]:.0f} mm, prints "
+                        f"{_how_printed(p)}, support ~{per[i]:.0f} cm2" + ("" if ok else ", too big for the bed")
+                        + (f", {p.shells} loose pieces" if p.shells > 1 else ""), "fg" if ok else "warn")
         elif not self.fits(np.array(r.parts[0].dims_mm), any_way=False):
-            psim.TextColored(WARN, f"Bigger than the {bed[0]:.0f} x {bed[1]:.0f} x {bed[2]:.0f} bed")
+            ui.warn(f"Bigger than the {bed[0]:.0f} x {bed[1]:.0f} x {bed[2]:.0f} bed.")
 
-        # view
+        ui.subhead("view")
         if n > 1:
-            if toggle_button("Print layout##view", self.view == "layout"):
-                self.view = "layout"
-                self.show_print()
-            psim.SameLine()
-            if toggle_button("Assembled##view", self.view == "assembled"):
-                self.view = "assembled"
+            changed, v = ui.choice("layout", [("layout", "print layout"), ("assembled", "assembled")], self.view,
+                                   "prview")
+            if changed:
+                self.view = v
                 self.show_print()
             if self.view == "assembled":
-                psim.SameLine()
-                psim.PushItemWidth(100)
-                changed, self.explode = psim.SliderFloat("gap (mm)##explode", self.explode, 0.0, 60.0, "%.0f")
-                psim.PopItemWidth()
+                changed, self.explode = ui.slider("gap", self.explode, 0.0, 60.0, "%.0f mm", key="prexplode")
                 if changed and self.showing:
                     self.show_print(reset_camera=False)
-        psim.Text("Colour:")
-        for key, label in (("support", "needs support"), ("thin", "too thin")) + ((("parts", "parts"),) if n > 1 else ()):
-            psim.SameLine()
-            if toggle_button(f"{label}##colour", self.colour == key):
-                self.colour = key
-                self.recolour()
+        opts = [("support", "support"), ("thin", "too thin")] + ([("parts", "parts")] if n > 1 else [])
+        changed, c = ui.choice("colour", opts, self.colour, "prcolour",
+                               helps=["Red: surfaces that need support.", "Red: walls thinner than the minimum.",
+                                      "One colour per part."][: len(opts)])
+        if changed:
+            self.colour = c
+            self.recolour()
+        w = psim.GetContentRegionAvail()[0]
         if self.showing:
-            if psim.Button("Show form"):
+            if ui.button("show form", "prform", "Back to the subdivision form.", width=0.4 * w):
                 self.show_form()
-        elif psim.Button("Show print model"):
+        elif ui.button("show print model", "prshow", width=0.4 * w):
             self.show_print()
-        psim.SameLine()
-        if psim.Button("Export print STL" + ("s" if n > 1 else "")):
+        psim.SameLine(0.0, 6.0)
+        if ui.button("export print STL" + ("s" if n > 1 else ""), "prexport",
+                     "Saved in exports/ (one STL per part). Load them all into the slicer together.",
+                     width=psim.GetContentRegionAvail()[0], kind="primary"):
             self.export()
-        psim.SetItemTooltip("Saved in exports/ (one STL per part). Load them all into the slicer together.")
         for name, info in self.last_export:
             ok = info["complete"] and info["watertight"]
-            psim.TextColored(OK if ok else WARN, f"{name}: {info['triangles']:,} triangles, "
-                             + ("verified complete and watertight" if ok else f"NOT valid ({info})"))
+            ui.push_font("small")
+            ui.wrap(f"{name}: {info['triangles']:,} triangles, "
+                    + ("verified complete and watertight" if ok else f"NOT valid ({info})"), "dim" if ok else "warn")
+            ui.pop_font()
 
     def turntable_ui(self):
         t = self.tt
-        _, t["frames"] = psim.SliderInt("frames", int(t["frames"]), 12, 240)
-        _, t["seconds"] = psim.SliderFloat("seconds", t["seconds"], 1.0, 20.0, "%.1f")
-        _, t["size"] = psim.SliderInt("size (px)", int(t["size"]), 256, 1600)
-        _, t["elevation"] = psim.SliderFloat("elevation (deg)", t["elevation"], -60.0, 80.0, "%.0f")
-        _, t["format"] = psim.Combo("format", t["format"], ["GIF", "MP4"])
-        if psim.Button("Render turntable"):
+        _, t["frames"] = ui.slider_int("frames", int(t["frames"]), 12, 240, key="ttframes")
+        _, t["seconds"] = ui.slider("seconds", t["seconds"], 1.0, 20.0, "%.1f s", key="ttsec")
+        _, t["size"] = ui.slider_int("size", int(t["size"]), 256, 1600, "%d px", key="ttsize")
+        _, t["elevation"] = ui.slider("elevation", t["elevation"], -60.0, 80.0, "%.0f deg", key="ttelev")
+        _, t["format"] = ui.choice("format", [(0, "GIF"), (1, "MP4")], t["format"], "ttfmt")
+        if ui.button("render turntable", "ttgo", "Orbits the camera around whatever is shown (form or print model) "
+                                                 "and saves to renders/.", kind="primary"):
             self.render_turntable()
-        psim.SetItemTooltip("Orbits the camera around whatever is shown (form or print model) and saves to renders/.")
 
     def render_turntable(self):
         """Orbit whatever is shown: the print model (z-up, mm) or the form (y-up)."""
@@ -802,4 +778,4 @@ class PrintPanel:
         except OSError as e:
             self.app.error = f"Turntable failed: {e}"
             return
-        self.app.status = f"Saved renders/{os.path.basename(path)} in {time.perf_counter() - t0:.1f}s"
+        self.app.status = f"saved renders/{os.path.basename(path)} in {time.perf_counter() - t0:.1f}s"

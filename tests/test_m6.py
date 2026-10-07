@@ -37,7 +37,7 @@ def test_smooth_cube_prints_watertight_and_true_to_size():
 
 
 def test_self_intersecting_form_becomes_one_closed_solid():
-    m = run("fig3_left", 4)
+    m = run("cube_six_arms", 4)
     r = prepare(m, PrintSettings(**FAST))
     pm = r.mesh()
     assert closed(pm) and r.volume_cm3 > 0
@@ -45,7 +45,7 @@ def test_self_intersecting_form_becomes_one_closed_solid():
 
 
 def test_open_panel_skin_and_base():
-    m = run("panel_tile", 4)
+    m = run("panel_tileable", 4)
     skin = prepare(m, PrintSettings(**{**FAST, "up": "z", "wall_mm": 1.5}))
     assert closed(skin.mesh())
     assert any("no enclosed volume" in n for n in skin.notes)
@@ -186,7 +186,7 @@ def test_half_detail_is_smaller_and_still_watertight():
 @pytest.mark.parametrize("detail", [1, 2])
 def test_porous_form_prints_watertight_at_every_detail(detail, tmp_path):
     """Regression: a marching-cubes step of 2 used to leave non-manifold edges on porous forms."""
-    r = prepare(run("porous_grotto", 5), PrintSettings(size_mm=60, voxel_mm=0.3, detail=detail))
+    r = prepare(run("cube_porous_grotto", 5), PrintSettings(size_mm=60, voxel_mm=0.3, detail=detail))
     info = write_stl(str(tmp_path / "p.stl"), r)
     assert info["complete"] and info["watertight"] and closed(r.mesh())
 

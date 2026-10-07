@@ -1,6 +1,6 @@
 {
-  "name": "Column \u2014 Fig. 4 zoned (4 weight sets along y)",
-  "description": "Paper Fig. 4: an elongated cube on a base with four sets of non-stationary weights placed along the y axis (pure eq. 8-9, background 0). The column divides into a base and three sections with smooth gradients between them. Drag the sets up/down in the Attractors panel.",
+  "name": "column_box_zoned",
+  "description": "An elongated cube on a base with four sets of non-stationary weights placed along y (pure eq. 8-9, background 0). The column divides into a base and three sections with smooth gradients between them. Drag the sets up and down in attractors.\nref: Hansmeyer 2010, Fig. 4.",
   "base": {
     "shape": "column_box",
     "height": 6.0,

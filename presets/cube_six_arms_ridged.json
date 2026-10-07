@@ -1,20 +1,21 @@
 {
-  "name": "Layers \u2014 Worley cell tile",
-  "description": "A Worley (cell-border) displacement layer on a locked panel: a cellular relief that still tiles, because displacement fades out at the locked boundary.",
+  "name": "cube_six_arms_ridged",
+  "description": "The six-arms recipe with a negative edge weight and a stronger face push in the first step (w_e -0.18, w_f 0.4): crisper, ridged arms.\nref: Hansmeyer 2010, Fig. 3 (left).",
   "base": {
-    "shape": "panel",
-    "nx": 4,
-    "ny": 4
+    "shape": "cube"
   },
   "extrusion": "relative",
-  "boundary": "locked",
-  "fade_rows": 1.0,
+  "boundary": "smooth",
+  "fade_rows": 2.0,
   "preview_depth": 5,
-  "full_depth": 7,
+  "full_depth": 8,
   "iterations": [
     {
       "scheme": "cc",
       "weights": {
+        "w_f": 0.4000000059604645,
+        "w_e": -0.18000000715255737,
+        "w_c": -1.2,
         "w1": -1.0,
         "w2": -2.0
       }
@@ -22,6 +23,7 @@
     {
       "scheme": "cc",
       "weights": {
+        "w_c": -0.4,
         "w1": -1.0,
         "w2": -2.0
       }
@@ -29,6 +31,7 @@
     {
       "scheme": "cc",
       "weights": {
+        "w_f": 0.4,
         "w1": -1.0,
         "w2": -2.0
       }
@@ -36,6 +39,17 @@
     {
       "scheme": "cc",
       "weights": {
+        "w_f": 0.6,
+        "w1": -1.0,
+        "w2": -2.0,
+        "w3": 1.0,
+        "w4": -1.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_e": 0.4,
         "w1": -1.0,
         "w2": -2.0
       }
@@ -43,6 +57,7 @@
     {
       "scheme": "cc",
       "weights": {
+        "w_e": -0.3,
         "w1": -1.0,
         "w2": -2.0
       }
@@ -50,6 +65,7 @@
     {
       "scheme": "cc",
       "weights": {
+        "w_f": 0.2,
         "w1": -1.0,
         "w2": -2.0
       }
@@ -57,13 +73,7 @@
     {
       "scheme": "cc",
       "weights": {
-        "w1": -1.0,
-        "w2": -2.0
-      }
-    },
-    {
-      "scheme": "cc",
-      "weights": {
+        "w_e": 0.15,
         "w1": -1.0,
         "w2": -2.0
       }
@@ -77,24 +87,7 @@
       "weights": {}
     }
   ],
-  "view": "three_quarter",
+  "view": "diagonal",
   "attractor_space": "current",
-  "background": 1.0,
-  "layers": [
-    {
-      "name": "L",
-      "enabled": true,
-      "target": "displacement",
-      "function": "worley",
-      "params": {
-        "mode": 1,
-        "frequency": 2.5
-      },
-      "amplitude": 0.45,
-      "offset": 0.0,
-      "from": 3,
-      "to": 6,
-      "space": "rest"
-    }
-  ]
+  "background": 1.0
 }

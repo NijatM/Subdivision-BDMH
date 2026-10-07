@@ -1,6 +1,6 @@
 {
-  "name": "Column \u2014 box on base (Fig. 4 input)",
-  "description": "The paper's uniform Fig. 4 input (elongated cube on a base, 3 shaft segments) with uniform weights: pulled-in corners bead the shaft. The zoned version with four weight sets along y arrives with attractors (M3).",
+  "name": "column_box_beaded",
+  "description": "An elongated cube on a base (3 shaft segments) with uniform weights: pulled-in corners bead the shaft. column_box_zoned adds four weight sets along its height.\nref: Hansmeyer 2010, Fig. 4 (input).",
   "base": {
     "shape": "column_box",
     "height": 6.0,

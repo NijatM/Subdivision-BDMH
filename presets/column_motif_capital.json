@@ -1,60 +1,48 @@
 {
-  "name": "Fig. 3 left \u2014 six arms",
-  "description": "Strong negative corner extrusion (w_c) pulls the 8 cube corners into the body so the 6 faces grow into arms; later iterations bulge the arm ends (eq. 4) and add ribs (w_e). Arms reproduced; the paper's fluted fans at the tips are not yet.",
+  "name": "column_motif_capital",
+  "description": "Vertices classed by motif get attractor / deflector values (3F3E cap rings +1, 4F4E shaft +0.5, 8F8E cap centres -1), applied through w6 / w7: capital and base differentiate from the mesh's own topology.\nref: Hansmeyer 2010, Fig. 7, eq. 10-11.",
   "base": {
-    "shape": "cube"
+    "shape": "column_classic"
   },
   "extrusion": "relative",
+  "boundary": "smooth",
+  "fade_rows": 2.0,
   "preview_depth": 5,
-  "full_depth": 8,
+  "full_depth": 7,
   "iterations": [
     {
       "scheme": "cc",
       "weights": {
         "w_f": 0.3,
-        "w_c": -1.2,
-        "w1": -1.0,
-        "w2": -2.0
-      }
-    },
-    {
-      "scheme": "cc",
-      "weights": {
-        "w_c": -0.4,
-        "w1": -1.0,
-        "w2": -2.0
-      }
-    },
-    {
-      "scheme": "cc",
-      "weights": {
-        "w_f": 0.4,
-        "w1": -1.0,
-        "w2": -2.0
-      }
-    },
-    {
-      "scheme": "cc",
-      "weights": {
-        "w_f": 0.6,
         "w1": -1.0,
         "w2": -2.0,
-        "w3": 1.0,
-        "w4": -1.0
+        "w6": 1.0,
+        "w7": 1.0
       }
     },
     {
       "scheme": "cc",
       "weights": {
-        "w_e": 0.4,
+        "w_c": -0.3,
         "w1": -1.0,
-        "w2": -2.0
+        "w2": -2.0,
+        "w6": 1.0,
+        "w7": 0.5
       }
     },
     {
       "scheme": "cc",
       "weights": {
-        "w_e": -0.3,
+        "w_f": 0.3,
+        "w1": -1.0,
+        "w2": -2.0,
+        "w6": 0.5
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_e": 0.3,
         "w1": -1.0,
         "w2": -2.0
       }
@@ -70,7 +58,20 @@
     {
       "scheme": "cc",
       "weights": {
-        "w_e": 0.15,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
         "w1": -1.0,
         "w2": -2.0
       }
@@ -84,5 +85,12 @@
       "weights": {}
     }
   ],
-  "view": "diagonal"
+  "view": "three_quarter",
+  "attractor_space": "current",
+  "background": 1.0,
+  "motifs": {
+    "3F3E": 1.0,
+    "4F4E": 0.5,
+    "8F8E": -1.0
+  }
 }

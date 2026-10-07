@@ -1,6 +1,6 @@
 {
-  "name": "Column \u2014 classic (Fig. 7 input)",
-  "description": "A differentiated 80-vertex column (base, shaft with entasis, echinus, abacus). Its topography already reads as a column, so mild weights suffice: the capital flares, the shaft gets banded.",
+  "name": "column_gyroid_coral",
+  "description": "A gyroid field (TPMS) adds to w_f in iterations 2-6, evaluated at the original positions: the column's relief follows the gyroid's labyrinth like coral.",
   "base": {
     "shape": "column_classic"
   },
@@ -8,12 +8,35 @@
   "boundary": "smooth",
   "fade_rows": 2.0,
   "preview_depth": 5,
-  "full_depth": 8,
+  "full_depth": 7,
   "iterations": [
     {
       "scheme": "cc",
       "weights": {
+        "w_f": 0.15,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_e": 0.15,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
         "w_f": 0.2,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
         "w_e": 0.2,
         "w1": -1.0,
         "w2": -2.0
@@ -22,7 +45,7 @@
     {
       "scheme": "cc",
       "weights": {
-        "w_c": -0.4,
+        "w_f": 0.15,
         "w1": -1.0,
         "w2": -2.0
       }
@@ -30,17 +53,7 @@
     {
       "scheme": "cc",
       "weights": {
-        "w_f": 0.4,
-        "w1": -1.0,
-        "w2": -2.0,
-        "w3": -1.0,
-        "w4": 1.0
-      }
-    },
-    {
-      "scheme": "cc",
-      "weights": {
-        "w_e": 0.3,
+        "w_e": 0.1,
         "w1": -1.0,
         "w2": -2.0
       }
@@ -48,23 +61,6 @@
     {
       "scheme": "cc",
       "weights": {
-        "w_f": 0.3,
-        "w1": -1.0,
-        "w2": -2.0
-      }
-    },
-    {
-      "scheme": "cc",
-      "weights": {
-        "w_e": -0.2,
-        "w1": -1.0,
-        "w2": -2.0
-      }
-    },
-    {
-      "scheme": "cc",
-      "weights": {
-        "w_f": 0.1,
         "w1": -1.0,
         "w2": -2.0
       }
@@ -85,5 +81,25 @@
       "weights": {}
     }
   ],
-  "view": "three_quarter"
+  "view": "three_quarter",
+  "attractor_space": "current",
+  "background": 1.0,
+  "layers": [
+    {
+      "name": "L",
+      "enabled": true,
+      "target": "weight",
+      "function": "gyroid",
+      "params": {
+        "frequency": 1.2
+      },
+      "weight": "w_f",
+      "blend": "add",
+      "amplitude": 0.5,
+      "offset": 0.0,
+      "from": 2,
+      "to": 6,
+      "space": "rest"
+    }
+  ]
 }

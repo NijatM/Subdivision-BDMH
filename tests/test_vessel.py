@@ -95,6 +95,6 @@ def test_exact_print_upside_down_on_a_flat_rim(tmp_path):
 
 
 def test_lithophane_preset():
-    d = Design.load(os.path.join(ROOT, "presets", "lithophane_sphere.json"))
+    d = Design.load(os.path.join(ROOT, "presets", "vessel_lithophane.json"))
     m = Pipeline(root=ROOT).run(d, d.preview_depth).mesh
     assert vessel.active(d) and closed(m) and m.euler_characteristic() == 2

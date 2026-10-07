@@ -1,6 +1,6 @@
 {
-  "name": "Lithophane sphere V2",
-  "description": "A thin-walled sphere with a circular opening on top (Vessel panel): an exact, smooth sphere outside and a structured, deep subdivision relief inside - pure weights, no noise. Iteration 1 pushes the faces out and pulls the corners in, 2 sinks the edges into ribs, 3 swells the panels, 4 alternates faces and edges into nested coffers, 5 adds fine ribbing. The furthest-reaching panels press against the shell as thin windows (glowing share 15%), so lit from inside it reads like a rose window. Edit the weights as on any form; use the Section view to watch the relief and Light preview for the glow. Print upside down on the rim (the Print panel does this and exports the mesh exactly).",
+  "name": "vessel_lithophane",
+  "description": "A thin-walled sphere with a circular opening on top (vessel section): an exact, smooth sphere outside and a structured, deep subdivision relief inside, pure weights, no noise. Iteration 1 pushes the faces out and pulls the corners in, 2 sinks the edges into ribs, 3 swells the panels, 4 alternates faces and edges into nested coffers, 5 adds fine ribbing. The furthest-reaching panels press against the shell as thin windows (glowing share 15%), so lit from inside it reads like a rose window. Edit the weights as on any form; use the cut tool over the view to watch the relief and the light preview for the glow. It prints upside down on the rim (print exports the mesh exactly).",
   "base": {
     "shape": "sphere_open",
     "sides": 20,

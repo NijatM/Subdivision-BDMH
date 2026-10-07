@@ -1,9 +1,8 @@
 {
-  "name": "Layers \u2014 twisted rose flutes",
-  "description": "A 10-fold rose field with twist displaces the Fig. 4 column: spiral fluting, like a Solomonic column.",
+  "name": "cube_fractal_gyroid",
+  "description": "A gyroid evaluated in Mandelbox-folded space (3 folds, c = 1) drives w_f: fractal, non-repeating ornament from a simple periodic field. Colour by 'selected layer field' to see it.",
   "base": {
-    "shape": "column_box",
-    "shaft_segments": 3
+    "shape": "cube"
   },
   "extrusion": "relative",
   "boundary": "smooth",
@@ -11,22 +10,6 @@
   "preview_depth": 5,
   "full_depth": 7,
   "iterations": [
-    {
-      "scheme": "cc",
-      "weights": {
-        "w_f": 0.15,
-        "w1": -1.0,
-        "w2": -2.0
-      }
-    },
-    {
-      "scheme": "cc",
-      "weights": {
-        "w_e": 0.15,
-        "w1": -1.0,
-        "w2": -2.0
-      }
-    },
     {
       "scheme": "cc",
       "weights": {
@@ -38,7 +21,6 @@
     {
       "scheme": "cc",
       "weights": {
-        "w_e": 0.2,
         "w1": -1.0,
         "w2": -2.0
       }
@@ -46,7 +28,6 @@
     {
       "scheme": "cc",
       "weights": {
-        "w_f": 0.15,
         "w1": -1.0,
         "w2": -2.0
       }
@@ -54,7 +35,20 @@
     {
       "scheme": "cc",
       "weights": {
-        "w_e": 0.1,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
         "w1": -1.0,
         "w2": -2.0
       }
@@ -82,24 +76,32 @@
       "weights": {}
     }
   ],
-  "view": "three_quarter",
+  "view": "diagonal",
   "attractor_space": "current",
   "background": 1.0,
   "layers": [
     {
       "name": "L",
       "enabled": true,
-      "target": "displacement",
-      "function": "rose",
+      "target": "weight",
+      "function": "gyroid",
       "params": {
-        "k": 10,
-        "twist": 1.2
+        "frequency": 0.8
       },
-      "amplitude": 0.35,
+      "weight": "w_f",
+      "blend": "add",
+      "amplitude": 0.6,
       "offset": 0.0,
       "from": 2,
       "to": 6,
-      "space": "rest"
+      "space": "rest",
+      "domain": {
+        "fold": "mandelbox",
+        "repeat": 3,
+        "scale": 1.0,
+        "c": 1.0,
+        "params": {}
+      }
     }
   ]
 }

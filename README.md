@@ -36,38 +36,69 @@ Requirements: **Python 3.10+** ([python.org](https://www.python.org/downloads/);
 
 ## Using the app
 
-- **Theme** (top of the panel): *Dark* is the default; *Light* is available. Your choice is remembered in `.app_settings.json`.
-- **Preset**: load any design from `presets/`. Type a name and press *Save* to store your own.
-  - After every bake, the current design is also kept in `presets/_last_session.json`: load *_last_session* to get back where you left off.
-- **Base mesh**: pick a shape; its parameters appear as sliders.
-  - Cube and Platonic solids (tetrahedron, octahedron, dodecahedron, icosahedron).
-  - **Column: box on base** (paper Fig. 4) and **Column: classic** (Fig. 7 style: base, shaft with entasis and taper, echinus, abacus).
-  - **Panel**: an open relief tile with optional bend or saddle.
-  - **Cube cage (frame)**: the 12 edges of a cube as bars, all six faces open.
-  - **Sphere with opening (vessel)**: a sphere with a circular opening on top. *opening* is its angular radius. With the Vessel on, *diameter (mm)* sets its real size.
-  - **Import OBJ**: drop `.obj` files into `inputs/` (a sample `l_block.obj` is included), pick one and press *Load OBJ*. Duplicate vertices are welded, winding is repaired, and the mesh is scaled to fit. Non-manifold meshes are rejected with an explanation.
-- **Boundary** (open meshes only):
-  - *smooth* uses the standard Catmull-Clark boundary rules.
-  - *locked / tileable* keeps the outline fixed and fades the relief out over *fade rows*, so identical tiles meet seamlessly (see below). Doo-Sabin steps shrink open boundaries, and the app warns when they'd break tiling.
-- **Depth & extrusion**: *preview depth* recomputes live while you drag. After 1.5 s idle (or *Bake full depth*), the **full depth** is computed. The face budget caps runaway depths.
-- **Iteration schedule**: pick an iteration, choose Catmull-Clark or Doo-Sabin, and set its weights. *Sharp* sets `w1=-1, w2=-2`; *Copy → next / all* duplicates a step. *Overview* shows every weight as bars across iterations.
-- **View & export**: *diagonal* looks down the cube's body diagonal like the paper. Export **OBJ / PLY** (quads kept) or **STL** (triangulated) to `exports/`; *Screenshot* writes to `renders/`.
-- **Section view (see inside)**: *cut the view open* hides everything on one side of a plane, so you can keep editing while looking inside.
-  - Pick the plane (*X / Y / Z*), slide its *position*, or *Flip* to keep the other half.
-  - *drag in the view* shows a handle to move or tilt the plane with the mouse.
-  - *Face the cut* points the camera at the cut face.
-  - It works on the form and on the print model, and screenshots and turntables are cut too.
-- Ctrl+click any slider to type an exact value. Hover a control for its explanation.
-- Pinkish surfaces are **back faces**: the surface has folded through itself.
+The app (window title *SubdivisionEngine_BDMH*) shares the look of [nijatmahamaliyev.com](https://nijatmahamaliyev.com) and the HTMAA site: dark, monochrome, IBM Plex Mono (bundled in `assets/fonts/`, OFL licence).
+
+```
++-------------------+----------------------------------------+---------------------+
+| Nijat Mahamaliyev | root@nijat:~$ ./SubdivisionEngine_BDMH | 02 · FORM           |
+|                   | diag front top 3/4  wire  colour  cut  | Iteration schedule  |
+| FORM              |                                        |                     |
+| 00 presets        |                                        | the selected        |
+| 01 base mesh      |               3D view                  | section's controls  |
+| 02 schedule       |                                        |                     |
+| GROWTH  03-07     |                                        |                     |
+| MAKE    08-10     | undo redo  preview 5  full 8  bake     |                     |
+|                   | baked · depth 8 · 98,304 faces         |                     |
++-------------------+----------------------------------------+---------------------+
+```
+
+- **Sidebar (left)**: the sections in workflow order. **FORM**: 00 presets, 01 base mesh, 02 schedule. **GROWTH**: 03 attractors, 04 layers, 05 groups, 06 intrinsic, 07 porosity. **MAKE**: 08 vessel, 09 print, 10 export.
+  - The right column shows each section's state: the preset (with `*` when edited), the shape, the depths, how many attractors / layers / groups / rules are on, whether the print model is ready. Sections with nothing set are faint.
+- **Inspector (right)**: the selected section's controls. Each section opens with one line on what it does; hover any control for its full explanation, or press **?** (or H) to show the longer explanations inline.
+- **Toolbar (over the view)**: views (*diag* looks down the cube's body diagonal like the paper), *wire*, *colour by* (attractor influence, the selected layer's field, group tags, light through a vessel wall, any measure), the section *cut* (… for its settings), help, the dark / light palette, and Polyscope's own panel (it takes the sidebar's place while on).
+- **Bottom bar (under the view)**: undo / redo, *preview* depth (recomputed live while you edit), *full* depth (baked after 1.5 s idle, or *bake*), auto-bake, then the state of the result and the latest message (hover it for the recent log).
+- **Undo / redo** covers every design edit, including loading a preset: a preset loads with one click and one undo brings your design back.
+- **The last session reopens on start** (it is kept in `presets/_last_session.json` after every bake). *restore last session* in presets brings it back later.
+- Ctrl/Cmd+click any slider to type an exact value. Your choices (palette, section, printer, window size) are remembered in `.app_settings.json`.
+- Grey surfaces are **back faces**: the surface has folded through itself.
+
+| Key | Action |
+|---|---|
+| Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z | undo, redo |
+| Ctrl/Cmd+S | save the preset (name in *presets → save as*) |
+| B | bake the full depth |
+| E | export the mesh (format in *export*) |
+| 1 2 3 4 | diag, front, top, 3/4 view |
+| W | wireframe |
+| [ ] | previous / next section |
+| H | longer help texts on / off |
+| Tab | hide / show all panels (for screenshots and presenting) |
+
+**Presets** are named *family_form* and grouped by base shape: `cube_*`, `column_*`, `panel_*`, `solid_*`, `cage_*`, `vessel_*`. Presets after a figure of the paper say so in their description (*ref: Hansmeyer 2010, Fig. 3 (left)*). Names without a family prefix are listed under SAVED.
+
+**Base mesh** shapes:
+- Cube and Platonic solids (tetrahedron, octahedron, dodecahedron, icosahedron).
+- **Column: box on base** (paper Fig. 4) and **Column: classic** (Fig. 7 style: base, shaft with entasis and taper, echinus, abacus).
+- **Panel**: an open relief tile with optional bend or saddle.
+- **Cube cage (frame)**: the 12 edges of a cube as bars, all six faces open.
+- **Sphere with opening (vessel)**: a sphere with a circular opening on top. *opening* is its angular radius. With the vessel on, *diameter* sets its real size.
+- **Import OBJ**: drop `.obj` files into `inputs/` (a sample `l_block.obj` is included), pick one and press *load obj*. Duplicate vertices are welded, winding is repaired, and the mesh is scaled to fit. Non-manifold meshes are rejected with an explanation.
+- **Open boundary** (open meshes only): *smooth* uses the standard Catmull-Clark boundary rules; *locked / tile* keeps the outline fixed and fades the relief out over *fade rows*, so identical tiles meet seamlessly (see below). Doo-Sabin steps shrink open boundaries, and the app warns when they'd break tiling.
+
+**Schedule**: pick an iteration (`*` = only in the baked result), choose Catmull-Clark or Doo-Sabin, and set its weights. Each slider is a bar filled from zero to the value. *sharp* sets `w1=-1, w2=-2`; *copy → next / all* duplicates a step. The *overview* shows every weight in use as bars across the iterations (the open one bright). *face budget* caps runaway depths.
+
+**Export**: **OBJ / PLY** (quads kept) or **STL** (triangulated) to `exports/`; *save png* writes the view (without the panels) to `renders/`; turntables below.
+
+**Section cut** (toolbar *cut*, settings under …): hides everything on one side of a plane, so you can keep editing while looking inside. Pick the plane (*X / Y / Z*), slide its *position*, *flip side*, *drag in the view* to move or tilt it, *face the cut* to point the camera at it. It works on the form and on the print model; screenshots and turntables are cut too.
 
 ### Attractors (non-uniform weights)
 
-Attractors make weights vary **in space**, the paper's *extrinsic specification of parameters* (eq. 8–9). Use the **Attractors** panel:
+Attractors make weights vary **in space**, the paper's *extrinsic specification of parameters* (eq. 8–9). Section **03 attractors**:
 
-- **+ Point / + Curve** adds one near the form. Click a row to select it. **Drag the white gizmo** in the viewport, or type coordinates.
+- **+ point / + curve** adds one near the form. Click a row to select it. **Drag the gizmo** in the view (shown while this section is open), or type coordinates.
 - **Kind**:
   - *point*.
-  - *curve*: line, circle, helix, sine, Lissajous, or an editable **polyline**. *Convert to editable polyline* turns any curve into draggable control points. *Import* reads `.csv/.txt` (x y z per line) or `.obj` polylines from Rhino or Blender; try `inputs/sample_curve.csv`.
+  - *curve*: line, circle, helix, sine, Lissajous, or an editable **polyline**. *convert to polyline* turns any curve into draggable control points. *Import* reads `.csv/.txt` (x y z per line) or `.obj` polylines from Rhino or Blender; try `inputs/sample_curve.csv`.
 - **Payload**:
   - *weight set*: a full per-iteration schedule of its own. Each face blends all sets by distance: `c_a = f(d_a)·h_a / Σ f(d_i)·h_i`, `w = Σ w_i·c_i` (eq. 8–9).
   - *modifier*: rules such as "scale `w_f` ×3 in iterations 1–4" or "add +0.3 to `w_e`", applied near the attractor.
@@ -80,11 +111,11 @@ Attractors make weights vary **in space**, the paper's *extrinsic specification 
 
 ### Function layers (our extension)
 
-Mathematical fields and folds layered on top of Hansmeyer's process, in the **Function layers** panel:
+Mathematical fields and folds layered on top of Hansmeyer's process, in section **04 layers**:
 
-- **+ Weight field**: a field drives one weight per face (`w_f`, `w_e`, …) before an iteration. The blend can be add, multiply, replace, min or max.
-- **+ Displacement**: moves vertices along their normals after an iteration (adds relief directly).
-- **+ Fold**: deforms the whole mesh with a fold map after an iteration.
+- **+ weight field**: a field drives one weight per face (`w_f`, `w_e`, …) before an iteration. The blend can be add, multiply, replace, min or max.
+- **+ displacement**: moves vertices along their normals after an iteration (adds relief directly).
+- **+ fold**: deforms the whole mesh with a fold map after an iteration.
 - **Built-in families:**
   - **TPMS**: gyroid, Schwarz P, Schwarz D, Neovius.
   - **Noise**: Perlin, fBm, ridged, domain-warped, Worley cells or borders.
@@ -96,21 +127,21 @@ Mathematical fields and folds layered on top of Hansmeyer's process, in the **Fu
   - **evaluate at** *original* positions (the pattern sticks to the form like a texture) or *current* positions (the form grows through a fixed pattern).
   - **mask** by an attractor's reach, or by **facing direction** (*facing +y* etc.): the layer acts on surfaces facing that way and fades out on surfaces facing away. *facing +y* keeps detail on top and leaves the undersides plain, which is easier to 3D print.
   - **domain fold**: repeat a fold on the field's input, e.g. Mandelbox × 3 with c = 1, for fractal ornament.
-- **Plug-ins**: drop a `.py` file into `functions/` with an `@field` or `@fold` function, then press *Reload plug-ins*. Sliders are generated from its parameters. See [`functions/README.md`](functions/README.md) and the examples `ripples.py` and `twist.py`.
+- **Plug-ins**: drop a `.py` file into `functions/` with an `@field` or `@fold` function, then press *reload functions/*. Sliders are generated from its parameters. See [`functions/README.md`](functions/README.md) and the examples `ripples.py` and `twist.py`.
 
 ### The paper's intrinsic features
 
-- **Groups (Fig. 9)**: *+ Group*, then *Click to tag* faces or vertices on the input mesh, or *Select by rule* (facing direction, height band, every k-th, motif).
+- **Groups (05, Fig. 9)**: *+ group*, then *click to tag* faces or vertices on the input mesh, or *select by rule* (facing direction, height band, every k-th, motif).
   - Each group gets **weight rules**.
   - **Lock iterations** hold its vertices in place, so locked edges stay sharp creases and locked points become spikes. Tags pass to every child face.
-- **Motifs (Fig. 6–7, eq. 10–11)**: every motif found on the input (e.g. `3F3E`, `4F4E`) gets an attractor/deflector value **U**. The schedule's **w6** and **w7** pull face and edge points toward (+) or away from (−) those vertices.
-- **Measure rules (Fig. 8 + curvature)**: distance to original vertices, distance to original edges, planarity, or bend gives a per-face *t* in [0, 1]. A rule sets, scales or offsets a weight from *at 0* to *at 1*.
-- **Vertex merging / porosity**: welds vertices of *different* parts of the surface that grow into contact (pairwise, within a fraction of the local edge length). Where a welded vertex would exceed the **max valence**, faces aren't formed, which opens holes and handles. The Euler characteristic is shown.
-- **Colour by** (View & export): attractor influence, the selected layer's field, group tags, or any measure. It shows where things act.
+- **Motifs (06 intrinsic, Fig. 6–7, eq. 10–11)**: every motif found on the input (e.g. `3F3E`, `4F4E`) gets an attractor/deflector value **U**. The schedule's **w6** and **w7** pull face and edge points toward (+) or away from (−) those vertices.
+- **Measure rules (06 intrinsic, Fig. 8 + curvature)**: distance to original vertices, distance to original edges, planarity, or bend gives a per-face *t* in [0, 1]. A rule sets, scales or offsets a weight from *at 0* to *at 1*.
+- **Vertex merging (07 porosity)**: welds vertices of *different* parts of the surface that grow into contact (pairwise, within a fraction of the local edge length). Where a welded vertex would exceed the **max valence**, faces aren't formed, which opens holes and handles. The Euler characteristic is shown.
+- **Colour by** (toolbar): attractor influence, the selected layer's field, group tags, or any measure. It shows where things act.
 
 ### Printing (FDM) and turntables
 
-**Print (FDM, watertight STL)** turns any form into a printable solid:
+Section **09 print** turns any form into a watertight, printable solid:
 - **What it handles:**
   - Self-intersections are merged into one solid.
   - Open or porous skins are thickened to the *min wall*.
@@ -125,10 +156,10 @@ Mathematical fields and folds layered on top of Hansmeyer's process, in the **Fu
 - ***Mesh detail: half*** gives about 4× smaller files (still watertight).
 - **Typical times:** 100 mm at 0.3 mm voxels takes about 2–20 s; 200 mm about 1.5 min and 2 GB of RAM.
 
-The panel is laid out top to bottom:
+The section is laid out top to bottom:
 - **Printer:** pick your bed (Bambu A1/P1S/X1C, A1 mini, Prusa MK4, CORE One, MINI, or custom). The choice is remembered.
 - **Size:** choose what the number measures (longest side, height, width or depth), type it in mm or click 50/100/150/200. **Fit bed** finds the largest size that fits. The live W × D × H line says whether it fits.
-- **Orientation:** which model axis points up (±X, ±Y, ±Z). **Auto** picks the one with the least overhang.
+- **Orientation:** which model axis points up (±X, ±Y, ±Z). **auto: least support** picks the one with the least overhang.
 - **Undersides:**
   - **Self-supporting undersides** fills below every overhang with a smooth keel no flatter than the angle (default 45°). The print then needs almost no support.
     - Upward-facing surfaces keep all their detail, and horizontal holes get pointed (teardrop) tops.
@@ -136,55 +167,55 @@ The panel is laid out top to bottom:
     - Set the slicer's threshold angle below the keel angle.
   - **Flat foot** trims the bottom flat, so the print stands on a face instead of a point.
 - **Cut into parts:** *Whole*, *2 halves* (a horizontal cut at the widest section), *4 quarters* (two vertical cuts: four pillars, like the corners of a cage) or *8 pieces*. You can also tick each cut and move it.
-  - Orange planes on the form show where the cuts go.
+  - Planes over the form show where the cuts go.
   - Every part is its own closed solid, and its cut faces are exactly flat, so mating parts meet without a gap.
   - *Alignment pin holes* (default Ø 2.0 mm × 5 mm, for 1.75 mm filament pins) are drilled into both faces of every joint.
   - Each part is turned on its own to need the least support (usually cut face down), or printed as assembled.
 - **Resolution:** *Draft / Standard / Fine* (voxel = 1 / 0.75 / 0.5 × nozzle) or *Max* (the finest the grid limit allows). The line below shows the real detail size, triangles, STL size, RAM and time. If the grid limit coarsens your choice, it says so.
-- **Advanced:** exact voxel size, grid limit (400–1000 voxels along the longest side, with its RAM cost), min wall, smoothing, voxel softening, mesh detail and solid base.
+- **Advanced settings:** exact voxel size, grid limit (400–1000 voxels along the longest side, with its RAM cost), min wall, smoothing, voxel softening, mesh detail and solid base.
 - **Support check** (after preparing): set the slicer's support *threshold angle*. Surfaces that would get support turn red, and the area per part is listed.
   - The angle works like Bambu Studio, Orca and PrusaSlicer: downward surfaces flatter than it (measured from the horizontal) get support, so **higher = more support**.
 - **View:** *Print layout* (parts side by side on the plate) or *Assembled*, with an explode gap. Colour by *needs support*, *too thin* or *parts*.
 - **Export print STLs** writes one verified STL per part (`…_part1of4_left-front.stl`, …). Load them all into the slicer together.
 
-**Cube cage** (`presets/cube_cage.json`): a cube frame with flat outer faces and organic openings, printed in 4 quarters.
-- It starts from the **Cube cage (frame)** base shape: 12 bars, all six faces open. *bar width* and *segments* are in the Base mesh panel.
+**Cube cage** (`presets/cage_cube.json`): a cube frame with flat outer faces and organic openings, printed in 4 quarters.
+- It starts from the **Cube cage (frame)** base shape: 12 bars, all six faces open. *bar width* and *segments* are in base mesh.
 - Subdivision makes the bars swell, ridge and bead.
   - fBm noise and three *lens* attractors make some bars bulge into the openings while others stay slim.
   - Worley cells texture the inside.
 - A final **Clamp to box** fold flattens everything beyond the cube onto its faces, so the outer faces are flat like a cut block.
-- To print it: *Cut into parts → 4 quarters*. Each quarter lies flat on an outer face, needs almost no support, and has pin holes at the joints, so the cage can be assembled around something placed inside.
+- To print it: *cut into parts → 4 quarters*. Each quarter lies flat on an outer face, needs almost no support, and has pin holes at the joints, so the cage can be assembled around something placed inside.
   - At 150 mm it is about 620 cm³ (≈370 g PLA at 20% infill). A smaller *bar width* or size makes it lighter.
 
-**Why a whole Fig. 3 form gets support everywhere:** its arms stick out sideways, so their undersides are near-horizontal overhangs at any threshold angle. The form also stands on a single arm tip.
+**Why a whole six-arms form (Fig. 3) gets support everywhere:** its arms stick out sideways, so their undersides are near-horizontal overhangs at any threshold angle. The form also stands on a single arm tip.
 - The mesh is fine: shrink-wrapping it changes nothing.
 - Cutting it into 2 halves at the widest section cuts the support area by about 4–7×, and each half stands on a large flat face.
 
-**Turntable** orbits the camera around the form, or around the print model, and saves a GIF or MP4 to `renders/`. From the command line:
+**Turntable** (in 10 export) orbits the camera around the form, or around the print model, and saves a GIF or MP4 to `renders/`. From the command line:
 
 ```bash
-python render.py presets/fig3_right.json --turntable renders/fig3_right.gif
+python render.py presets/cube_petal_flower.json --turntable renders/cube_petal_flower.gif
 ```
 
-If anything unexpected goes wrong, the app logs it to `app_errors.log` and shows it in the panel instead of closing.
+If anything unexpected goes wrong, the app logs it to `app_errors.log` and shows it in the bottom bar instead of closing.
 
 ![Tiling](renders/panel_tiling.png)
-*Four copies of `panel_tile` side by side: the locked boundary makes the seams line up.*
+*Four copies of `panel_tileable` side by side: the locked boundary makes the seams line up.*
 
 ### Vessel: lithophane sphere
 
-The **Vessel (lithophane sphere)** panel turns the form into the inside of a thin shell (our extension):
+Section **08 vessel** (lithophane sphere) turns the form into the inside of a thin shell (our extension):
 - **Outside**: an exact, smooth sphere of the chosen *diameter (mm)*.
 - **Inside**: the subdivision relief, exactly what the schedule's weights build. It is measured against the same schedule run with zero weights, so you edit it like any other form.
   - The parts reaching out furthest (*glowing share*, e.g. 15%) press against the shell at the *window wall* (0.8 mm). They glow when lit from inside.
   - Everything else is deeper and thicker, at the form's true proportions times *relief depth*, up to the *deepest wall* cap.
   - *Turn the relief inside out* swaps what is near the shell and what is deep.
 - **Opening**: an exact, flat circle with a solid *rim wall*. The vessel prints upside down standing on it, so the dome comes out smooth.
-- **Light preview** (or *Colour by → light through the wall*): bright = thin. Use the **Section view** to see the relief itself.
-- **Size**: the *diameter (mm)* slider sits in **Base mesh**, right under the sphere's settings, with the print size shown below it. The same value is in the Vessel panel and the Print panel's **Size** section. The view always fits the sphere to the screen, so the sphere doesn't grow on screen. Watch the *print size* line instead. Type it, use the 80–200 buttons, or *Fit bed*. The walls stay as set in mm at any size.
-- **Printing**: the Print panel exports the vessel **exactly**, with no voxel remesh, so the sphere stays perfect. It is set upside down (*-Y up*).
+- **light preview** (or *colour → light through wall*): bright = thin. *cut it open* (or the toolbar's *cut*) shows the relief itself.
+- **Size**: the *diameter* slider sits in **base mesh**, right under the sphere's settings, with the print size shown below it. The same value is in vessel and in print's **size**. The view always fits the sphere to the screen, so the sphere doesn't grow on screen. Watch the *print size* line instead. Type it, use the 80–200 buttons, or *Fit bed*. The walls stay as set in mm at any size.
+- **Printing**: print exports the vessel **exactly**, with no voxel remesh, so the sphere stays perfect. It is set upside down (*-Y up*).
   - An opening of 35° or more needs no support outside.
-- **Preset**: `presets/lithophane_sphere.json`. A structured, deep relief from pure weights, with no noise:
+- **Preset**: `presets/vessel_lithophane.json` (64 mm). A structured, deep relief from pure weights, with no noise:
   - Faces push out and corners pull in, then the edges sink into ribs.
   - The panels swell, then alternate faces and edges into nested coffers.
   - Fine ribbing finishes it.
@@ -208,9 +239,9 @@ The **Vessel (lithophane sphere)** panel turns the form into the inside of a thi
 ## Render presets from the command line
 
 ```bash
-python render.py presets/fig3_left.json --depth 8                 # → renders/fig3_left.png
+python render.py presets/cube_six_arms.json --depth 8             # → renders/cube_six_arms.png
 python render.py presets/*.json --depth 6 --montage renders/all.png
-python render.py presets/panel_tile.json --theme light            # white background
+python render.py presets/panel_tileable.json --theme light        # paper-white background
 ```
 
 ## Tests
@@ -269,14 +300,17 @@ The suite checks:
 ## Layout
 
 ```
-app.py              interactive Polyscope app
-ui_attractors.py    Attractors panel (gizmo, curves, falloff, sets, modifiers)
-ui_layers.py        Function layers panel
-ui_intrinsic.py     Groups / motifs / measures / merging panels (click-to-tag picking)
-ui_print.py         Print (FDM) and Turntable panels
-ui_vessel.py        Vessel (lithophane sphere) panel
-ui_section.py       Section view (cutting plane)
-ui_common.py        shared UI widgets
+app.py              interactive Polyscope app: sidebar, inspector, toolbar, bottom bar, undo, shortcuts,
+                    and the presets / base mesh / schedule / export sections
+ui_style.py         the look (site palette, IBM Plex Mono, dark / light) and the widgets every section uses
+ui_attractors.py    03 attractors (gizmo, curves, falloff, sets, modifiers)
+ui_layers.py        04 function layers
+ui_intrinsic.py     05 groups / 06 intrinsic (motifs, measures) / 07 porosity (click-to-tag picking)
+ui_vessel.py        08 vessel (lithophane sphere)
+ui_print.py         09 print (FDM) and the turntable in 10 export
+ui_section.py       section cut (toolbar)
+ui_common.py        shared rule editors
+assets/fonts/       IBM Plex Mono (SIL Open Font Licence)
 render.py           headless preset → PNG
 hansmeyer/
   mesh.py           polygon mesh, vectorised half-edges, normals, per-vertex attributes
@@ -324,7 +358,7 @@ tests/              pytest suite + independent reference implementation
   - The bend measure.
   - Merging details. The paper only says proximate vertices are joined and faces can't form beyond the max valence. We weld *pairs* of vertices that don't share a face, within a fraction of the local edge length, and drop the faces that would break manifoldness.
 - **Fig. 3:** the paper publishes no weight values, so the presets reproduce the *character* of the figures, not exact geometry. The left figure's arms are there, but its fluted fans at the arm tips aren't yet.
-- **Fig. 4:** reproduced in character by `column_fig4_zoned`: four weight sets along y, a base and three sections with gradients. Again, the paper gives no weight values.
+- **Fig. 4:** reproduced in character by `column_box_zoned`: four weight sets along y, a base and three sections with gradients. Again, the paper gives no weight values.
 
 ## Roadmap
 
@@ -334,3 +368,4 @@ tests/              pytest suite + independent reference implementation
 4. ✅ Function layer stack (TPMS, noise, analytic, folds, domain folds) and a `functions/` plug-in folder
 5. ✅ Tagging/locking (Fig. 9), motifs (eq. 10–11, Fig. 7), topological distance (Fig. 8) and curvature, vertex merging (porosity), colour-by maps
 6. ✅ Watertight voxel remesh for FDM printing (verified STL export, thin-feature check), turntable GIF/MP4
+7. ✅ UI redesign in the look of nijatmahamaliyev.com: sidebar + inspector, sections by workflow, undo / redo, shortcuts, presets renamed by family

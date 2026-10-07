@@ -20,7 +20,7 @@ def closed(m) -> bool:
 
 @pytest.fixture(scope="module")
 def six_arms():
-    d = Design.load(os.path.join(ROOT, "presets", "fig3_left.json"))
+    d = Design.load(os.path.join(ROOT, "presets", "cube_six_arms.json"))
     return Pipeline(root=ROOT).run(d, 4).mesh
 
 
@@ -197,7 +197,7 @@ def test_clamp_box_fold_flattens_the_outside():
 
 
 def test_cube_cage_preset_prints_in_four_flat_quarters():
-    d = Design.load(os.path.join(ROOT, "presets", "cube_cage.json"))
+    d = Design.load(os.path.join(ROOT, "presets", "cage_cube.json"))
     m = Pipeline(root=ROOT).run(d, d.preview_depth).mesh
     assert np.allclose(np.abs(m.V).max(0), 0.95)  # the preview already shows the flat, clamped outside
     r = prepare(m, PrintSettings(size_mm=60.0, voxel_mm=0.4, smooth=4, cut_x=0.5, cut_y=0.5))

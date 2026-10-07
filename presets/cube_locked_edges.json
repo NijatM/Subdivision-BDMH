@@ -1,6 +1,6 @@
 {
-  "name": "Fig. 9 \u2014 locked edges",
-  "description": "Paper Fig. 9: two edges of the cube are locked for 7 iterations (group 'edges', lock 7). The rest of the form bulges and rounds, the locked edges stay straight, sharp creases. Lower the lock iterations to soften them.",
+  "name": "cube_locked_edges",
+  "description": "Two edges of the cube are locked for 7 iterations (group 'edges', lock 7). The rest of the form bulges and rounds; the locked edges stay straight, sharp creases. Lower the lock iterations to soften them.\nref: Hansmeyer 2010, Fig. 9.",
   "base": {
     "shape": "cube"
   },

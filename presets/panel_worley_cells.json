@@ -1,19 +1,20 @@
 {
-  "name": "Layers \u2014 Mandelbox-folded gyroid",
-  "description": "A gyroid evaluated in Mandelbox-folded space (3 folds, c = 1) drives w_f: fractal, non-repeating ornament from a simple periodic field. Colour by 'selected layer's field' to see it.",
+  "name": "panel_worley_cells",
+  "description": "A Worley (cell-border) displacement layer on a locked panel: a cellular relief that still tiles, because displacement fades out at the locked boundary.",
   "base": {
-    "shape": "cube"
+    "shape": "panel",
+    "nx": 4,
+    "ny": 4
   },
   "extrusion": "relative",
-  "boundary": "smooth",
-  "fade_rows": 2.0,
+  "boundary": "locked",
+  "fade_rows": 1.0,
   "preview_depth": 5,
   "full_depth": 7,
   "iterations": [
     {
       "scheme": "cc",
       "weights": {
-        "w_f": 0.2,
         "w1": -1.0,
         "w2": -2.0
       }
@@ -76,32 +77,24 @@
       "weights": {}
     }
   ],
-  "view": "diagonal",
+  "view": "three_quarter",
   "attractor_space": "current",
   "background": 1.0,
   "layers": [
     {
       "name": "L",
       "enabled": true,
-      "target": "weight",
-      "function": "gyroid",
+      "target": "displacement",
+      "function": "worley",
       "params": {
-        "frequency": 0.8
+        "mode": 1,
+        "frequency": 2.5
       },
-      "weight": "w_f",
-      "blend": "add",
-      "amplitude": 0.6,
+      "amplitude": 0.45,
       "offset": 0.0,
-      "from": 2,
+      "from": 3,
       "to": 6,
-      "space": "rest",
-      "domain": {
-        "fold": "mandelbox",
-        "repeat": 3,
-        "scale": 1.0,
-        "c": 1.0,
-        "params": {}
-      }
+      "space": "rest"
     }
   ]
 }

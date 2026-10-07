@@ -12,15 +12,25 @@ import polyscope as ps
 from .mesh import PolyMesh
 
 MESH_NAME = "form"
-MESH_COLOR = (0.86, 0.85, 0.82)
+MESH_COLOR = (0.84, 0.84, 0.83)
+BACK_COLOR = (0.40, 0.40, 0.40)
 
-# Polyscope tone-maps the background (gamma ~2.2), so colours are given in linear space:
-# 0.0065 linear ~ 0.10 on screen (a deep charcoal).
+# Polyscope tone-maps the background, so these are the values that land on screen as the site's #0b0b0b
+# (dark) and its inverted paper white #f4f4f2 (light); measured from screenshots.
 THEMES = {
-    "dark": {"background": (0.0060, 0.0065, 0.0080), "ground": "shadow_only", "edge": (0.18, 0.18, 0.20)},
-    "light": {"background": (1.0, 1.0, 1.0), "ground": "shadow_only", "edge": (0.25, 0.25, 0.25)},
+    "dark": {"background": (0.00099, 0.00099, 0.00099), "ground": "shadow_only", "edge": (0.10, 0.10, 0.10),
+             "screen": (11, 11, 11)},
+    "light": {"background": (0.825, 0.825, 0.808), "ground": "shadow_only", "edge": (0.30, 0.30, 0.30),
+              "screen": (244, 244, 242)},
 }
-_theme = {"name": "dark", "polyscope_style": None}
+# Monochrome scene helpers (attractors, cut planes, tagging overlays) that read on either background.
+HELPERS = {
+    "dark": {"main": (1.0, 1.0, 1.0), "set": (0.86, 0.86, 0.86), "mod": (0.56, 0.56, 0.56),
+             "off": (0.28, 0.28, 0.28), "plane": (0.92, 0.92, 0.92), "base": (0.32, 0.32, 0.32)},
+    "light": {"main": (0.0, 0.0, 0.0), "set": (0.14, 0.14, 0.14), "mod": (0.45, 0.45, 0.45),
+              "off": (0.72, 0.72, 0.72), "plane": (0.10, 0.10, 0.10), "base": (0.70, 0.70, 0.70)},
+}
+_theme = {"name": "dark"}
 
 
 def apply_scene_theme(name: str) -> None:
@@ -31,25 +41,9 @@ def apply_scene_theme(name: str) -> None:
     ps.set_ground_plane_mode(t["ground"])
 
 
-def apply_ui_theme(name: str) -> None:
-    """ImGui colours — must be called inside a frame (e.g. from the user callback)."""
-    import polyscope.imgui as psim
-
-    colors = psim.GetStyle().Colors
-    if _theme["polyscope_style"] is None:  # remember Polyscope's own dark style once
-        _theme["polyscope_style"] = [tuple(colors[i]) for i in range(psim.ImGuiCol_COUNT)]
-    if name == "dark":
-        for i, c in enumerate(_theme["polyscope_style"]):
-            colors[i] = c
-    else:
-        psim.StyleColorsLight()
-        colors = psim.GetStyle().Colors
-        accent = (0.36, 0.62, 0.50, 1.0)
-        for key, c in [("Header", accent), ("HeaderHovered", (0.42, 0.70, 0.57, 1.0)),
-                       ("Button", (0.36, 0.62, 0.50, 0.55)), ("ButtonHovered", (0.42, 0.70, 0.57, 0.9)),
-                       ("TitleBgActive", accent), ("TitleBg", accent), ("SliderGrab", accent),
-                       ("CheckMark", (0.20, 0.45, 0.35, 1.0))]:
-            colors[getattr(psim, "ImGuiCol_" + key)] = c
+def helper(kind: str) -> tuple:
+    """Colour for a scene helper in the current theme: main | set | mod | off | plane | base."""
+    return HELPERS[_theme["name"]][kind]
 
 
 VIEWS = {
@@ -61,8 +55,8 @@ VIEWS = {
 }
 
 
-def setup_scene(window=(1280, 900), theme: str = "dark"):
-    ps.set_program_name("Hansmeyer Subdivision")
+def setup_scene(window=(1280, 900), theme: str = "dark", title: str = "SubdivisionEngine_BDMH"):
+    ps.set_program_name(title)
     ps.set_window_size(*window)
     ps.set_up_dir("y_up")
     ps.set_SSAA_factor(2)
@@ -84,7 +78,7 @@ def show_mesh(mesh: PolyMesh, edges: bool | None = None, face_values: np.ndarray
         edge_width=0.6 if edges else 0.0,
         edge_color=THEMES[_theme["name"]]["edge"],
         back_face_policy="custom",
-        back_face_color=(0.55, 0.42, 0.40),
+        back_face_color=BACK_COLOR,
     )
     if face_values is not None:
         vals = np.asarray(face_values, float)

@@ -1,6 +1,6 @@
 {
-  "name": "Cube cage",
-  "description": "A cube frame (the 'cage' base: 12 bars, all six faces open) sculpted by subdivision. The bars swell, ridge and bead; fBm noise and three 'lens' attractors make some bars bulge into the openings while others stay slim; Worley cells texture the inside. A final 'clamp to box' fold flattens everything beyond the cube onto its faces: flat outer faces like a cut block, organic openings. Print it in 4 quarters (Print panel: Cut into parts, 4 quarters): each lies flat on an outer face, needs almost no support, and has pin holes at the joints, so the cage can be assembled around something placed inside.",
+  "name": "cage_cube",
+  "description": "A cube frame (the 'cage' base: 12 bars, all six faces open) sculpted by subdivision. The bars swell, ridge and bead; fBm noise and three 'lens' attractors make some bars bulge into the openings while others stay slim; Worley cells texture the inside. A final 'clamp to box' fold flattens everything beyond the cube onto its faces: flat outer faces like a cut block, organic openings. Print it in 4 quarters (print: cut into parts, 4 quarters): each lies flat on an outer face, needs almost no support, and has pin holes at the joints, so the cage can be assembled around something placed inside.",
   "base": {
     "shape": "cage",
     "size": 2.0,

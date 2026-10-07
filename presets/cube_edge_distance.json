@@ -1,6 +1,6 @@
 {
-  "name": "Porosity \u2014 welded grotto",
-  "description": "The Fig. 3-left recipe with vertex merging (distance 0.12, max valence 6): where the sheets collapse into the centre they are welded and faces are dropped, opening holes and handles (watch the Euler characteristic).",
+  "name": "cube_edge_distance",
+  "description": "w_f is set by each face's edge-hop distance to the original cube edges (-0.3 on the edges to +0.5 far from them). Colour by 'distance to original edges' to see the measure.\nref: Hansmeyer 2010, Fig. 8.",
   "base": {
     "shape": "cube"
   },
@@ -13,8 +13,6 @@
     {
       "scheme": "cc",
       "weights": {
-        "w_f": 0.3,
-        "w_c": -1.2,
         "w1": -1.0,
         "w2": -2.0
       }
@@ -22,7 +20,6 @@
     {
       "scheme": "cc",
       "weights": {
-        "w_c": -0.4,
         "w1": -1.0,
         "w2": -2.0
       }
@@ -30,7 +27,6 @@
     {
       "scheme": "cc",
       "weights": {
-        "w_f": 0.4,
         "w1": -1.0,
         "w2": -2.0
       }
@@ -38,17 +34,6 @@
     {
       "scheme": "cc",
       "weights": {
-        "w_f": 0.6,
-        "w1": -1.0,
-        "w2": -2.0,
-        "w3": 1.0,
-        "w4": -1.0
-      }
-    },
-    {
-      "scheme": "cc",
-      "weights": {
-        "w_e": 0.4,
         "w1": -1.0,
         "w2": -2.0
       }
@@ -56,7 +41,6 @@
     {
       "scheme": "cc",
       "weights": {
-        "w_e": -0.3,
         "w1": -1.0,
         "w2": -2.0
       }
@@ -64,7 +48,13 @@
     {
       "scheme": "cc",
       "weights": {
-        "w_f": 0.2,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
         "w1": -1.0,
         "w2": -2.0
       }
@@ -88,12 +78,17 @@
   "view": "diagonal",
   "attractor_space": "current",
   "background": 1.0,
-  "merge": {
-    "enabled": true,
-    "distance": 0.12,
-    "relative": true,
-    "max_valence": 6,
-    "from": 3,
-    "to": 6
-  }
+  "intrinsic": [
+    {
+      "enabled": true,
+      "measure": "dist_edge",
+      "weight": "w_f",
+      "op": "set",
+      "a": -0.3,
+      "b": 0.5,
+      "gamma": 1.0,
+      "from": 2,
+      "to": 6
+    }
+  ]
 }

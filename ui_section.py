@@ -1,5 +1,5 @@
-"""Section view for app.py: a cutting plane that opens up whatever is shown, so the inside of a form
-(a vessel's inner relief, a cage's bars) can be seen while you keep modelling."""
+"""Section cut for app.py: a plane that opens up whatever is shown, so the inside of a form (a vessel's inner
+relief, a cage's bars) can be seen while you keep modelling. Lives in the toolbar over the 3D view."""
 
 from __future__ import annotations
 
@@ -7,7 +7,8 @@ import numpy as np
 import polyscope as ps
 import polyscope.imgui as psim
 
-from ui_common import toggle_button
+import ui_style as ui
+from hansmeyer.view import helper
 
 
 class SectionTool:
@@ -30,30 +31,53 @@ class SectionTool:
             return None
         return V.min(0), V.max(0)
 
-    def ui(self):
-        if psim.CollapsingHeader("Section view (see inside)"):
-            changed, self.on = psim.Checkbox("cut the view open", self.on)
-            psim.SetItemTooltip("Hides everything on one side of a plane, so you can see inside while you keep "
-                                "editing. Screenshots and turntables are cut too.")
-            psim.Text("Plane across:")
-            for a, name in enumerate("XYZ"):
-                psim.SameLine()
-                if toggle_button(f"{name}##sec", self.axis == a):
-                    self.axis, self.on = a, True
-            psim.SameLine()
-            if psim.Button("Flip##sec"):
-                self.keep_positive = not self.keep_positive
-            psim.SetItemTooltip("Keep the other half.")
-            _, pct = psim.SliderFloat("position##sec", 100 * self.pos, 0.0, 100.0, "%.0f %%")
-            self.pos = pct / 100.0
-            _, self.show_plane = psim.Checkbox("show plane##sec", self.show_plane)
-            psim.SameLine()
-            _, self.gizmo = psim.Checkbox("drag in the view##sec", self.gizmo)
-            psim.SetItemTooltip("Shows a handle on the plane: drag to move it, rotate the rings to tilt it.")
-            if psim.Button("Face the cut##sec"):
-                self.face_the_cut()
-            psim.SetItemTooltip("Point the camera straight at the cut face.")
-        self.apply()
+    def open_cut(self):
+        self.on = True
+
+    def theme_changed(self):
+        if self.plane is not None:
+            self._style_plane()
+
+    def _style_plane(self):
+        c = helper("plane")
+        self.plane.set_color(c)
+        self.plane.set_transparency(0.10)
+        self.plane.set_grid_line_color(c)
+
+    def toolbar_ui(self):
+        """'cut' toggle plus its settings in a popup, for the toolbar."""
+        label = f"cut {'xyz'[self.axis]} {100 * self.pos:.0f}%" if self.on else "cut"
+        if ui.toggle(label, self.on, "seccut", "Section cut: hide one side of a plane to see inside (also cuts "
+                                                "screenshots and turntables). Click the … box for settings."):
+            self.on = not self.on
+        psim.SameLine(0.0, -1.0)
+        if ui.button("…", "secmore", "Section settings"):
+            psim.OpenPopup("##sectionpop")
+        psim.PushStyleVar(psim.ImGuiStyleVar_WindowPadding, (16.0, 14.0))
+        psim.SetNextWindowSize((390.0, 0.0))
+        if psim.BeginPopup("##sectionpop"):
+            ui.spaced("SECTION CUT", "dim")
+            ui.gap(4.0)
+            self.settings_ui()
+            psim.EndPopup()
+        psim.PopStyleVar()
+
+    def settings_ui(self):
+        _, self.on = ui.check("cut the view open", self.on, "secon")
+        ch, a = ui.choice("plane across", [(0, "X"), (1, "Y"), (2, "Z")], self.axis, "secaxis")
+        if ch:
+            self.axis, self.on = a, True
+        _, pct = ui.slider("position", 100 * self.pos, 0.0, 100.0, "%.0f %%", key="secpos")
+        self.pos = pct / 100.0
+        if ui.button("flip side", "secflip", "Keep the other half."):
+            self.keep_positive = not self.keep_positive
+        psim.SameLine(0.0, 6.0)
+        if ui.button("face the cut", "secface", "Point the camera straight at the cut face."):
+            self.face_the_cut()
+        _, self.show_plane = ui.check("show plane", self.show_plane, "secplane")
+        psim.SameLine(0.0, 16.0)
+        _, self.gizmo = ui.check("drag in the view", self.gizmo, "secgizmo",
+                                 "Shows a handle on the plane: drag to move it, rotate the rings to tilt it.")
 
     def _pose(self):
         lo, hi = self.bounds()
@@ -76,9 +100,7 @@ class SectionTool:
             if not self.on:
                 return
             self.plane = ps.add_scene_slice_plane()
-            self.plane.set_color((0.95, 0.55, 0.15))  # a faint orange sheet instead of the default magenta grid
-            self.plane.set_transparency(0.12)
-            self.plane.set_grid_line_color((0.95, 0.55, 0.15))
+            self._style_plane()
         c, n, _ = self._pose()
         self.plane.set_pose(tuple(c), tuple(n))
         self.plane.set_active(self.on)
