@@ -25,6 +25,7 @@ from .mesh import (
     FCLASS_DS_VERT,
     VTYPE_DS,
     PolyMesh,
+    Topology,
 )
 
 
@@ -137,7 +138,24 @@ def subdivide(
         else:
             vattr[k] = corner_values(m, a, zero)
 
-    # ---- faces: F-faces, E-faces (interior edges), V-faces (interior vertices)
+    # ---- faces: F-faces, E-faces (interior edges), V-faces (interior vertices), built once per input
+    topo = m.topo.child("ds", lambda: child_topology(m))
+    fclass, eh, et, fans = topo.extra
+    fattr = {}
+    for k, a in m.fattr.items():
+        combine = np.bitwise_or if np.issubdtype(a.dtype, np.integer) else np.maximum
+        parts = [a, combine(a[m.he_face[eh]], a[m.he_face[et]])]
+        for fan in fans:
+            parts.append(combine.reduce(a[m.he_face[fan]], axis=1))
+        fattr[k] = np.concatenate(parts)
+    return PolyMesh(newV, topo.face_ptr, topo.face_idx, vtype=np.full(H, VTYPE_DS, dtype=np.int8), fclass=fclass,
+                    vattr=vattr, fattr=fattr, topo=topo)
+
+
+def child_topology(m: PolyMesh) -> Topology:
+    """Connectivity of the subdivided mesh; extra = (fclass, interior edge half-edges, their twins, vertex fans)."""
+    H = m.n_halfedges
+    sizes = m.face_size
     nxt, twin = m.he_next, m.he_twin
     eh = m.edge_he
     eh = eh[twin[eh] >= 0]
@@ -147,9 +165,8 @@ def subdivide(
 
     parts_idx = [np.arange(H), e_quads.reshape(-1)] + [f.reshape(-1) for f in fans]
     parts_size = [sizes, np.full(len(e_quads), 4)] + [np.full(len(f), f.shape[1]) for f in fans]
-    face_idx = np.concatenate(parts_idx)
-    face_size = np.concatenate(parts_size)
-    face_ptr = np.concatenate([[0], np.cumsum(face_size)])
+    face_idx = np.concatenate(parts_idx).astype(np.int64)
+    face_ptr = np.concatenate([[0], np.cumsum(np.concatenate(parts_size))]).astype(np.int64)
     n_v = sum(len(f) for f in fans)
     fclass = np.concatenate(
         [
@@ -158,15 +175,7 @@ def subdivide(
             np.full(n_v, FCLASS_DS_VERT),
         ]
     ).astype(np.int8)
-    fattr = {}
-    for k, a in m.fattr.items():
-        combine = np.bitwise_or if np.issubdtype(a.dtype, np.integer) else np.maximum
-        parts = [a, combine(a[m.he_face[eh]], a[m.he_face[et]])]
-        for fan in fans:
-            parts.append(combine.reduce(a[m.he_face[fan]], axis=1))
-        fattr[k] = np.concatenate(parts)
-    return PolyMesh(newV, face_ptr, face_idx, vtype=np.full(H, VTYPE_DS, dtype=np.int8), fclass=fclass,
-                    vattr=vattr, fattr=fattr)
+    return Topology(face_ptr, face_idx, H, extra=(fclass, eh, et, fans))
 
 
 def predicted_faces(m: PolyMesh) -> int:

@@ -57,8 +57,10 @@ The app (window title *SubdivisionEngine_BDMH*) shares the look of [nijatmahamal
 - **Inspector (right)**: the selected section's controls. Each section opens with one line on what it does; hover any control for its full explanation, or press **?** (or H) to show the longer explanations inline.
 - **Toolbar (over the view)**: views (*diag* looks down the cube's body diagonal like the paper), *wire*, *colour by* (attractor influence, the selected layer's field, group tags, light through a vessel wall, any measure), the section *cut* (… for its settings), help, the dark / light palette, and Polyscope's own panel (it takes the sidebar's place while on).
 - **Bottom bar (under the view)**: undo / redo, *preview* depth (recomputed live while you edit), *full* depth (baked after 1.5 s idle, or *bake*), auto-bake, then the state of the result and the latest message (hover it for the recent log).
+- **The window never waits for the full depth**: bakes run in a background process, and the form is replaced when the result is ready (the bottom bar shows *baking … s*). Heavy forms, those slower than ~60 ms per preview step, also update their preview there while you drag, so sliders stay smooth and the form follows a moment later.
 - **Undo / redo** covers every design edit, including loading a preset: a preset loads with one click and one undo brings your design back.
 - **The last session reopens on start** (it is kept in `presets/_last_session.json` after every bake). *restore last session* in presets brings it back later.
+- **3D view**: drag to orbit, right-drag (or Shift+drag) to pan, scroll or two-finger swipe to zoom. Every scroll notch covers the same share (~11 %) of the distance to the orbit centre, trackpad spikes are capped, and the camera never passes the centre or drifts further than 15x the form's size. **Double-click** a point of the form to orbit and zoom around it; **F** frames the whole form again.
 - Ctrl/Cmd+click any slider to type an exact value. Your choices (palette, section, printer, window size) are remembered in `.app_settings.json`.
 - Grey surfaces are **back faces**: the surface has folded through itself.
 
@@ -69,6 +71,7 @@ The app (window title *SubdivisionEngine_BDMH*) shares the look of [nijatmahamal
 | B | bake the full depth |
 | E | export the mesh (format in *export*) |
 | 1 2 3 4 | diag, front, top, 3/4 view |
+| F | frame the form again (if you lose it) |
 | W | wireframe |
 | [ ] | previous / next section |
 | H | longer help texts on / off |
@@ -296,6 +299,7 @@ The suite checks:
   - A full disk is refused cleanly (no partial file), writes are atomic, and the worker process runs.
 - **Turntable**: GIF frames orbit (skipped without OpenGL).
 - Affine and scale invariance, caching, the face budget, JSON round-trips, and that every preset loads.
+- **Speed-ups change nothing**: connectivity tables shared between meshes with the same faces, the one-sort edge table, the Worley cell table and the background bake all give results identical to building everything from scratch. The level cache stays under its memory cap, and the shared-memory hand-over to the background process round-trips.
 
 ## Layout
 
@@ -313,7 +317,8 @@ ui_common.py        shared rule editors
 assets/fonts/       IBM Plex Mono (SIL Open Font Licence)
 render.py           headless preset → PNG
 hansmeyer/
-  mesh.py           polygon mesh, vectorised half-edges, normals, per-vertex attributes
+  mesh.py           polygon mesh, vectorised half-edges (shared between meshes with the same faces), normals,
+                    per-vertex attributes
   catmull_clark.py  extended CC (eq. 1–4), smooth / locked boundaries
   doo_sabin.py      extended DS (eq. 5–6)
   schedule.py       weight definitions, per-iteration schedule, Design (= preset JSON)
@@ -328,7 +333,8 @@ hansmeyer/
   printprep.py      watertight voxel remesh for FDM printing (+ thin-feature check), exact export for vessels
   vessel.py         thin-walled lithophane sphere: exact outer sphere, relief inside, flat rim
   meshio.py         OBJ import + cleanup; OBJ / STL / PLY export
-  view.py           shared rendering style and dark/light themes
+  view.py           shared rendering style and dark/light themes, scroll zoom
+  background.py     the worker process for bakes and print prep (data passed through shared memory)
 presets/            JSON designs
 functions/          your plug-in functions (examples included)
 inputs/             drop .obj meshes / curve files here (samples included)

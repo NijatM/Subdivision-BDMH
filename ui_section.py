@@ -8,7 +8,7 @@ import polyscope as ps
 import polyscope.imgui as psim
 
 import ui_style as ui
-from hansmeyer.view import helper
+from hansmeyer.view import helper, look
 
 
 class SectionTool:
@@ -22,14 +22,18 @@ class SectionTool:
         self.gizmo = False
         self.plane = None
         self._applied = None
+        self._bounds = None  # (vertices, lo, hi)
 
     def bounds(self):
+        """Bounding box of what is shown (asked every frame: computed once per shown mesh)."""
         pp = self.app.print_panel
         V = pp.shown_V if pp.showing and pp.shown_V is not None else (
             self.app.result.mesh.V if self.app.result is not None else None)
         if V is None:
             return None
-        return V.min(0), V.max(0)
+        if self._bounds is None or self._bounds[0] is not V:
+            self._bounds = (V, V.min(0), V.max(0))
+        return self._bounds[1], self._bounds[2]
 
     def open_cut(self):
         self.on = True
@@ -116,4 +120,4 @@ class SectionTool:
         up = np.zeros(3)
         up[1 if self.axis != 1 else 2] = 1.0
         eye = c - n * 1.6 * size + up * 0.25 * size  # from the removed side, looking at the cut face
-        ps.look_at(tuple(eye), tuple(c))
+        look(eye, c)

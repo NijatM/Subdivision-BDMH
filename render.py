@@ -35,7 +35,7 @@ def main():
     root = os.path.dirname(os.path.abspath(__file__))
     for err in functions.load_plugins(os.path.join(root, "functions")):
         print("plug-in error:", err)
-    setup_scene((args.size, args.size), theme=args.theme)
+    setup_scene((args.size, args.size), theme=args.theme, ssaa=2)  # stills: always supersampled
     ps.set_ground_plane_mode("none")
     os.makedirs(args.out, exist_ok=True)
     pipe = Pipeline(root=os.path.dirname(os.path.abspath(__file__)))

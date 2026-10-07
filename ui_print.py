@@ -3,12 +3,9 @@ resolution, support check) and turntable renders."""
 
 from __future__ import annotations
 
-import atexit
-import multiprocessing as mp
 import os
 import shutil
 import time
-from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 
 import json
@@ -17,11 +14,11 @@ import numpy as np
 import polyscope as ps
 import polyscope.imgui as psim
 
-from hansmeyer import vessel
+from hansmeyer import background, vessel
 
-from hansmeyer.printprep import (UP_KEYS, PrintSettings, best_up, finest_voxel, grid_for, prepare_arrays,
-                                 prepare_exact_arrays, scale_for, stl_bytes, up_rotation, write_stl)
-from hansmeyer.view import MESH_COLOR, helper, turntable
+from hansmeyer.printprep import (UP_KEYS, PrintSettings, best_up, grid_for_dims, prepare_arrays, prepare_exact_arrays,
+                                 stl_bytes, to_print_coords, up_rotation, write_stl)
+from hansmeyer.view import MESH_COLOR, helper, look, set_view, turntable
 import ui_style as ui
 
 PREVIEW = "print model"
@@ -82,7 +79,7 @@ class PrintPanel:
         self.printer_idx = int(app.settings.get("printer", 0)) % len(PRINTERS)
         self.custom_bed = list(app.settings.get("custom_bed", [220.0, 220.0, 250.0]))
         self.job = None  # {"future", "started", "key", "settings"}
-        self.executor = None  # one worker process: heavy voxel work never blocks or crashes the UI
+        self.worker = background.Worker()  # its own process: heavy voxel work never blocks or crashes the UI
         self.last_export = []
         self.result = None
         self.result_key = None
@@ -138,16 +135,28 @@ class PrintPanel:
             self._cache[name] = hit
         return hit[1]
 
-    def dims_now(self):
-        """Assembled size (W, D, H) in mm for the current settings, without running anything."""
+    def _scale_dims(self):
+        """(model -> mm scale, assembled size (W, D, H) in mm) for the current settings, as printprep.scale_for
+        computes it. Asked every frame, so the form's extent is computed once per mesh and up direction."""
         m = self._mesh()
         if m is None:
             return None
-        ext = self._cached("ext", (id(m), str(self.s.up)), lambda: np.ptp(m.V @ up_rotation(self.s.up).T, axis=0))
+        ext = self._cached("ext", (m, str(self.s.up)), lambda: np.ptp(to_print_coords(m.V, self.s.up), axis=0))
         ref = {"width": ext[0], "depth": ext[1], "height": ext[2]}.get(self.s.size_axis, ext.max())
-        if ref < 1e-6 * ext.max():
+        if ref < 1e-6 * max(ext.max(), 1e-12):
             ref = ext.max()
-        return ext * (self.s.size_mm / max(ref, 1e-12))
+        scale = self.s.size_mm / max(ref, 1e-12)
+        return scale, ext * scale
+
+    def dims_now(self):
+        """Assembled size (W, D, H) in mm for the current settings, without running anything."""
+        sd = self._scale_dims()
+        return None if sd is None else sd[1]
+
+    def finest_voxel(self):
+        """The smallest voxel the grid limit allows at this size (or None without a form)."""
+        dims = self.dims_now()
+        return None if dims is None else float(dims.max() / self.s.max_grid)
 
     def part_dims_estimate(self, dims):
         """Largest part before running: the result's parts if it matches, else the cut fractions."""
@@ -179,8 +188,8 @@ class PrintPanel:
         self.s.size_mm = float(np.floor(self.s.size_mm * k * 2) / 2)
 
     def effective_voxel(self) -> float:
-        m = self._mesh()
-        return max(self.s.voxel_mm, finest_voxel(m, self.s)) if m is not None else self.s.voxel_mm
+        finest = self.finest_voxel()
+        return self.s.voxel_mm if finest is None else max(self.s.voxel_mm, finest)
 
     def estimate(self):
         """(triangles, STL bytes, RAM bytes, seconds or None) for the current settings."""
@@ -188,26 +197,49 @@ class PrintPanel:
         if m is None:
             return None
         s = self.s
-        _, voxel, _, shape = grid_for(m, s)
-        res = float(self.dims_now().max()) / (voxel * s.detail)  # output cells along the longest side
+        scale, dims = self._scale_dims()
+        voxel, _, shape = grid_for_dims(dims, s)
+        res = float(dims.max()) / (voxel * s.detail)  # output cells along the longest side
         nvox = float(np.prod(shape))
         if self.ref is not None:
             tris = self.ref[0] * (res / self.ref[1]) ** 2
             secs = self.ref[2] * nvox / self.ref[3]
         else:
-            def area():
-                T = m.V[m.triangles()]
-                return float(0.5 * np.linalg.norm(np.cross(T[:, 1] - T[:, 0], T[:, 2] - T[:, 0]), axis=1).sum())
-            a = self._cached("area", id(m), area)
-            scale, _ = scale_for(m, s)
+            def area():  # from a sample of ~60k faces (the estimate is rough anyway; a 1M-face form stays quick)
+                if m.is_all_quads():  # the same two fan triangles per quad as the export
+                    Q = m.face_idx.reshape(-1, 4)
+                    P = m.V[Q[::max(1, len(Q) // 60_000) | 1]]  # (odd: not in step with the 4 children)
+                    a = 0.5 * (np.linalg.norm(np.cross(P[:, 1] - P[:, 0], P[:, 2] - P[:, 0]), axis=1)
+                               + np.linalg.norm(np.cross(P[:, 2] - P[:, 0], P[:, 3] - P[:, 0]), axis=1))
+                else:
+                    T = m.triangles()
+                    P = m.V[T[::max(1, len(T) // 60_000) | 1]]
+                    a = 0.5 * np.linalg.norm(np.cross(P[:, 1] - P[:, 0], P[:, 2] - P[:, 0]), axis=1)
+                    Q = T
+                return float(a.sum()) * len(Q) / max(len(a), 1)
+            a = self._cached("area", m, area)
             tris = 1.6 * a * scale ** 2 / (voxel * s.detail) ** 2  # marching cubes: ~2.7 per cell, minus hidden folds
             secs = None
         return tris, 84 + 50 * tris, nvox * BYTES_PER_VOXEL, secs
+
+    def _free_disk(self) -> int:
+        """Free space on the project's disk, checked at most every 2 s (it is shown every frame)."""
+        now = time.perf_counter()
+        hit = self._cache.get("disk")
+        if hit is None or now - hit[0] > 2.0:
+            try:
+                hit = (now, shutil.disk_usage(self.app.root).free)
+            except OSError:
+                hit = (now, 0)
+            self._cache["disk"] = hit
+        return hit[1]
 
     def show_form(self):
         ps.remove_surface_mesh(PREVIEW, error_if_absent=False)
         if ps.has_surface_mesh("form"):
             ps.get_surface_mesh("form").set_enabled(True)
+        if self.showing and self.app.result is not None:  # the print model's camera is z-up and in mm: frame the form
+            set_view(self.app.result.mesh, self.app.design.view)
         self.showing = False
         self.shown_V = None
         self._planes_key = None
@@ -250,7 +282,7 @@ class PrintPanel:
             c = 0.5 * (V.min(0) + V.max(0))
             ext = float(np.linalg.norm(V.max(0) - V.min(0)))
             ps.set_up_dir("z_up")
-            ps.look_at(tuple(c + np.array([1.0, -1.4, 0.9]) * ext * 0.8), tuple(c))
+            look(c + np.array([1.0, -1.4, 0.9]) * ext * 0.8, c)
 
     def recolour(self):
         if self.showing and self.result is not None and ps.has_surface_mesh(PREVIEW):
@@ -262,7 +294,7 @@ class PrintPanel:
         cuts = (s.cut_x, s.cut_y, s.cut_z)
         visible = visible and m is not None and not self.showing and any(f is not None for f in cuts)
         widest = self._widest_fraction()
-        key = (visible, id(m), str(s.up), cuts, widest)
+        key = (visible, m, str(s.up), cuts, widest)
         if key == self._planes_key:
             return
         self._planes_key = key
@@ -299,19 +331,14 @@ class PrintPanel:
         return 0.5
 
     # ------------------------------------------------------------ the job
-    def _worker(self):
-        if self.executor is None:
-            self.executor = ProcessPoolExecutor(max_workers=1, mp_context=mp.get_context("spawn"))
-            atexit.register(self.executor.shutdown, wait=False, cancel_futures=True)
-        return self.executor
-
     def busy(self) -> bool:
         return self.job is not None and not self.job["future"].done()
 
     def start(self):
         if self.busy():
             return
-        self.app.bake()  # print at full depth
+        if not self.app.baked:
+            self.app.bake(wait=True)  # print at full depth
         if not self.app.result:
             return
         m = self.app.result.mesh
@@ -320,11 +347,11 @@ class PrintPanel:
             D = self.app.design.vessel["diameter_mm"]
             self.s.size_mm, self.s.size_axis = D, "width"
             settings = dict(vars(self.s))
-            future = self._worker().submit(prepare_exact_arrays, m.V, m.face_ptr, m.face_idx, settings, D / 2.0,
-                                           m.vattr.get("wall_mm"))
+            future = self.worker.submit(prepare_exact_arrays, m.V, m.face_ptr, m.face_idx, settings, D / 2.0,
+                                        m.vattr.get("wall_mm"))
         else:
             settings = dict(vars(self.s))
-            future = self._worker().submit(prepare_arrays, m.V, m.face_ptr, m.face_idx, settings)
+            future = self.worker.submit(prepare_arrays, m.V, m.face_ptr, m.face_idx, settings)
         self.job = {"future": future, "started": time.perf_counter(), "key": self._design_key(), "settings": settings}
         self.app.error = ""
 
@@ -337,9 +364,9 @@ class PrintPanel:
             return
         job, self.job = self.job, None
         try:
-            result = job["future"].result()
+            result = self.worker.result(job["future"])
         except BrokenProcessPool:
-            self.executor = None  # the worker died (usually out of memory): start a fresh one next time
+            self.worker.broken()  # the worker died (usually out of memory): start a fresh one next time
             self.app.error = "Print prep crashed (out of memory?): use a coarser resolution or a smaller size"
             return
         except MemoryError:
@@ -597,7 +624,7 @@ class PrintPanel:
         s = self.s
         ui.subhead("resolution")
         nozzle = NOZZLES[self.nozzle_idx]
-        finest = self.effective_voxel() if self._mesh() is None else max(finest_voxel(self._mesh(), s), 0.05)
+        finest = self.effective_voxel() if self._mesh() is None else max(self.finest_voxel(), 0.05)
         options = [(round(k * nozzle, 3), label) for label, k, _ in QUALITY] + [(round(finest, 3), "max")]
         cur = next((v for v, _ in options if abs(s.voxel_mm - v) < 1e-6), None)
         if cur is None and s.voxel_mm < finest - 1e-9:
@@ -675,7 +702,7 @@ class PrintPanel:
         ui.wrap(f"{len(r.F):,} triangles · {r.volume_cm3:.1f} cm3 · {mass} · "
                 + (f"detail {r.voxel_mm:.2f} mm" if r.voxel_mm > 0 else "exact mesh")
                 + (f" · {r.pins} pin holes" if n > 1 else ""), "dim")
-        need, free = stl_bytes(r), shutil.disk_usage(self.app.root).free
+        need, free = stl_bytes(r), self._free_disk()
         ui.wrap(f"STL ~{need / 1e6:.0f} MB · {free / 1e9:.1f} GB free on disk", "warn" if free < need + 64e6 else "dim")
         ui.pop_font()
         ui.end_card()

@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .mesh import FCLASS_CC, VTYPE_CORNER, VTYPE_EDGE, VTYPE_FACE, PolyMesh
+from .mesh import FCLASS_CC, VTYPE_CORNER, VTYPE_EDGE, VTYPE_FACE, PolyMesh, Topology, scatter_add
 
 
 def _per_face(W: dict, name: str, n: int) -> np.ndarray:
@@ -123,9 +123,7 @@ def subdivide(
     val = m.valence.astype(float)
     Fbar = m.vert_mean(Fp)
     mid = 0.5 * (Pa + Pb)
-    Esum = np.zeros_like(V)
-    np.add.at(Esum, ev[:, 0], mid)
-    np.add.at(Esum, ev[:, 1], mid)
+    Esum = scatter_add(ev.T.reshape(-1), np.concatenate([mid, mid]), N)
     Ebar = Esum / np.maximum(val, 1)[:, None]
     w2 = m.vert_mean(w2_f)[:, None]
     i = val[:, None]
@@ -135,11 +133,8 @@ def subdivide(
     if np.any(bnd):
         # standard boundary rule: cubic B-spline along the boundary, (P- + 6P + P+) / 8
         be = ev[m.edge_is_boundary]
-        nb_sum = np.zeros_like(V)
-        nb_cnt = np.zeros(N)
-        np.add.at(nb_sum, be[:, 0], V[be[:, 1]])
-        np.add.at(nb_sum, be[:, 1], V[be[:, 0]])
-        np.add.at(nb_cnt, be.ravel(), 1)
+        nb_sum = scatter_add(be.T.reshape(-1), np.concatenate([V[be[:, 1]], V[be[:, 0]]]), N)
+        nb_cnt = np.bincount(be.ravel(), minlength=N)
         regular = bnd & (nb_cnt == 2) & (not lock_boundary)
         Cp[regular] = (nb_sum[regular] + 6 * V[regular]) / 8.0
         fixed = bnd & ~regular  # locked boundary, corners, bow-ties: stay put
@@ -172,26 +167,28 @@ def subdivide(
                 att[lock_e] = 0.0
             Ep = Ep + att
 
-    # ---- topology: one quad per half-edge
-    h = np.arange(m.n_halfedges)
-    quads = np.stack(
-        [m.he_from[h], N + m.he_edge[h], N + E + m.he_face[h], N + m.he_edge[m.he_prev[h]]],
-        axis=1,
-    )
-    newV = np.concatenate([Cp, Ep, Fp])
-    vtype = np.concatenate(
-        [np.full(N, VTYPE_CORNER), np.full(E, VTYPE_EDGE), np.full(F, VTYPE_FACE)]
-    ).astype(np.int8)
-    H = m.n_halfedges
+    # ---- topology: one quad per half-edge (the same for every run from the same input: built once)
+    topo = m.topo.child("cc", lambda: child_topology(m))
+    vtype, fclass = topo.extra
     return PolyMesh(
-        newV,
-        np.arange(0, 4 * H + 1, 4, dtype=np.int64),
-        quads.reshape(-1),
+        np.concatenate([Cp, Ep, Fp]),
+        topo.face_ptr,
+        topo.face_idx,
         vtype=vtype,
-        fclass=np.full(H, FCLASS_CC, dtype=np.int8),
+        fclass=fclass,
         vattr={k: propagate_attr(m, a, k) for k, a in m.vattr.items()},
         fattr={k: a[m.he_face] for k, a in m.fattr.items()},  # each child quad inherits its parent face
+        topo=topo,
     )
+
+
+def child_topology(m: PolyMesh) -> Topology:
+    """Connectivity of the subdivided mesh (corners, then edge points, then face points); extra = (vtype, fclass)."""
+    N, E, F, H = m.n_verts, m.n_edges, m.n_faces, m.n_halfedges
+    quads = np.stack([m.he_from, N + m.he_edge, N + E + m.he_face, N + m.he_edge[m.he_prev]], axis=1)
+    vtype = np.concatenate([np.full(N, VTYPE_CORNER), np.full(E, VTYPE_EDGE), np.full(F, VTYPE_FACE)]).astype(np.int8)
+    return Topology(np.arange(0, 4 * H + 1, 4, dtype=np.int64), quads.reshape(-1), N + E + F,
+                    extra=(vtype, np.full(H, FCLASS_CC, dtype=np.int8)))
 
 
 def propagate_attr(m: PolyMesh, a: np.ndarray, name: str = "") -> np.ndarray:

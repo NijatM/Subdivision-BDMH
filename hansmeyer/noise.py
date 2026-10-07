@@ -92,6 +92,33 @@ def worley(p: np.ndarray, seed: int = 0, jitter: float = 1.0) -> tuple[np.ndarra
     """Distances to the nearest and second-nearest feature point (F1, F2) of a jittered grid."""
     p = np.asarray(p, float)
     base = np.floor(p).astype(np.int64)
+    if len(p) == 0:
+        return np.zeros(0), np.zeros(0)
+    # one feature point per grid cell, for the block of cells around the points (built once, not 27x per point)
+    lo = base.min(0) - 1
+    dims = base.max(0) + 2 - lo
+    if int(np.prod(dims)) > max(8 * len(p), 4096):  # sparse points over a huge range: per point instead
+        return _worley_direct(p, base, seed, jitter)
+    cells = np.stack(np.meshgrid(*(np.arange(lo[a], lo[a] + dims[a]) for a in range(3)), indexing="ij"), -1)
+    feat = (cells + 0.5 + jitter * (_hash3(cells, seed) - 0.5)).reshape(-1, 3)
+    rel = base - lo
+    lin = (rel[:, 0] * dims[1] + rel[:, 1]) * dims[2] + rel[:, 2]
+    fx, fy, fz = (np.ascontiguousarray(feat[:, a]) for a in range(3))
+    px, py, pz = (np.ascontiguousarray(p[:, a]) for a in range(3))
+    f1 = np.full(len(p), np.inf)
+    f2 = np.full(len(p), np.inf)
+    for i in (-1, 0, 1):
+        for j in (-1, 0, 1):
+            for k in (-1, 0, 1):
+                idx = lin + ((i * dims[1] + j) * dims[2] + k)
+                dx, dy, dz = fx[idx] - px, fy[idx] - py, fz[idx] - pz
+                d2 = dx * dx + dy * dy + dz * dz
+                np.minimum(f2, np.maximum(f1, d2), out=f2)
+                np.minimum(f1, d2, out=f1)
+    return np.sqrt(f1), np.sqrt(f2)
+
+
+def _worley_direct(p, base, seed, jitter):
     offs = np.array([(i, j, k) for i in (-1, 0, 1) for j in (-1, 0, 1) for k in (-1, 0, 1)])
     cells = base[:, None, :] + offs[None]  # (n, 27, 3)
     feat = cells + 0.5 + jitter * (_hash3(cells, seed) - 0.5)

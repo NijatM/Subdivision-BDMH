@@ -87,9 +87,11 @@ def facing_mask(normals: np.ndarray, name: str) -> np.ndarray:
 
 
 def _mask(design, layer, P, normals=None) -> np.ndarray | float:
+    """normals: an array, or a function returning one (only called by facing masks)."""
     if not layer.get("mask"):
         return 1.0
     if layer["mask"] in FACING:
+        normals = normals() if callable(normals) else normals
         return 1.0 if normals is None else facing_mask(normals, layer["mask"])
     from .attractors import influence
 
@@ -122,7 +124,7 @@ def apply_weight_layers(design, mesh, level: int, W: dict) -> dict:
             cache[ly["space"]] = face_positions(mesh, ly["space"])
         P = cache[ly["space"]]
         v = ly["amplitude"] * _field(ly, P) + ly["offset"]
-        m = _mask(design, ly, P, mesh.face_normal)
+        m = _mask(design, ly, P, lambda: mesh.face_normal)
         w = W[ly["weight"]]
         b = ly["blend"]
         if b == "add":
@@ -145,7 +147,7 @@ def with_positions(mesh, V):
     from .mesh import PolyMesh
 
     return PolyMesh(V, mesh.face_ptr, mesh.face_idx, vtype=mesh.vtype, fclass=mesh.fclass,
-                    vattr=mesh.vattr, fattr=mesh.fattr, info=dict(mesh.info))
+                    vattr=mesh.vattr, fattr=mesh.fattr, info=dict(mesh.info), topo=mesh.topo)
 
 
 def post_process(design, mesh, level: int, relative: bool = True, vmask=None):
@@ -170,7 +172,7 @@ def post_process(design, mesh, level: int, relative: bool = True, vmask=None):
             V = V + cur.vert_normal * amount[:, None]
         else:
             target = functions.evaluate(ly["function"], V, ly["params"])
-            m = np.broadcast_to(np.asarray(_mask(design, ly, V, cur.vert_normal), float), (len(V),))
+            m = np.broadcast_to(np.asarray(_mask(design, ly, V, lambda: cur.vert_normal), float), (len(V),))
             V = V + (ly["amplitude"] * m * keep)[:, None] * (target - V)
     return with_positions(mesh, V)
 

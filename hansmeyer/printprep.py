@@ -229,12 +229,17 @@ def scale_for(mesh: PolyMesh, s: PrintSettings) -> tuple[float, np.ndarray]:
 def grid_for(mesh: PolyMesh, s: PrintSettings):
     """Scale factor, voxel size and grid shape for a mesh (used for estimates before running)."""
     scale, dims = scale_for(mesh, s)
+    return (scale,) + grid_for_dims(dims, s)
+
+
+def grid_for_dims(dims: np.ndarray, s: PrintSettings):
+    """Voxel size, padding and grid shape for an assembled size (W, D, H) in mm."""
     voxel = max(s.voxel_mm, dims.max() / s.max_grid)
     pad = int(np.ceil(s.wall_mm / voxel)) + 3
     shape = np.ceil(dims / voxel).astype(int) + 2 * pad + 1
     if s.base:
         shape[2] += int(np.ceil(s.base_mm / voxel))
-    return scale, voxel, pad, tuple(int(x) for x in shape)
+    return voxel, pad, tuple(int(x) for x in shape)
 
 
 def finest_voxel(mesh: PolyMesh, s: PrintSettings) -> float:

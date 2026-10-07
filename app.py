@@ -16,6 +16,7 @@ import os
 import time
 import traceback
 from collections import deque
+from concurrent.futures.process import BrokenProcessPool
 
 import numpy as np
 import polyscope as ps
@@ -23,10 +24,10 @@ import polyscope.imgui as psim
 
 import ui_style as ui
 from hansmeyer import CC_WEIGHTS, DS_WEIGHTS, MAX_ITERATIONS, SHAPES, Design, IterationSpec, Pipeline, default_spec
-from hansmeyer import functions, intrinsic, vessel
+from hansmeyer import background, functions, intrinsic, vessel
 from hansmeyer.attractors import face_positions
 from hansmeyer.meshio import atomic_write, export
-from hansmeyer.view import apply_scene_theme, set_view, setup_scene, show_mesh, write_png
+from hansmeyer.view import apply_scene_theme, set_view, setup_scene, show_mesh, write_png, zoomed_view
 from ui_attractors import AttractorPanel
 from ui_intrinsic import IntrinsicPanel
 from ui_layers import LayerPanel
@@ -46,6 +47,7 @@ LAST_SESSION = os.path.join(PRESET_DIR, "_last_session.json")
 TITLE = "SubdivisionEngine_BDMH"
 DEFAULT_PRESET = "cube_six_arms"
 AUTO_BAKE_DELAY = 1.5  # seconds of no edits before auto-bake
+LIVE_BUDGET = 0.06  # s: forms slower than this to recompute preview in the background process while you edit
 SHARP = {"w1": -1.0, "w2": -2.0}
 EXPORT_FORMATS = ["obj", "stl", "ply"]
 NAV_W, INSPECTOR_W, TOOLBAR_H, STATUS_H = 282.0, 410.0, 76.0, 92.0
@@ -155,6 +157,11 @@ class App:
         self.pipe = Pipeline(root=ROOT)
         self.presets = self._list_presets()
         self.auto_bake = True
+        self.want_bake = False  # bake requested (button / B): starts once the background process is free
+        self.worker = background.Worker()  # full-depth bakes, and the live preview of heavy forms
+        self.job = None  # the running background job: {"kind", "depth", "key", "generation", "started", "future"}
+        self.generation = 0  # counts loaded designs: results computed for an earlier one are dropped
+        self.slow = False  # recompute this design's preview in the background (see LIVE_BUDGET)
         self.show_edges = False
         self.export_fmt = 0
         self.last_edit = time.perf_counter()
@@ -171,6 +178,8 @@ class App:
         self._snap_due = True
         self._snap_checked = 0.0
         self._window_seen = None
+        self._camera = None  # the view matrix at the end of the last frame (see zoom())
+        self._size_cache = (None, 1.0)
         self.preset_name, self.loaded_snap, self.modified = None, None, False
         self.last_session = self._read_last_session()  # the previous run's final design, read before any autosave
         self.design = Design()
@@ -187,6 +196,7 @@ class App:
             self.load_preset(self._preset_path(DEFAULT_PRESET) and DEFAULT_PRESET
                              or (self.presets[0][0] if self.presets else None))
         self.save_name = self._default_save_name()
+        self.worker.warm_up()  # start the background process now: the first bake then doesn't wait for it
 
     # ------------------------------------------------------------- messages
     @property
@@ -270,6 +280,8 @@ class App:
         self.print_panel.show_form()
         self.print_panel.defaults_for_shape_pending = True
         self.schedule_tab = 0
+        self.generation += 1
+        self.slow = self.predicted_faces(design.preview_depth) > 150_000  # until the first run is measured
         self.edited()
         return view
 
@@ -370,11 +382,16 @@ class App:
         self._snap_due = True
 
     def compute(self, depth):
+        """Run the schedule here and now (blocks the window while it runs)."""
         try:
             r = self.pipe.run(self.design, depth)
         except Exception as e:  # bad OBJ, degenerate parameters, ...: keep the last good mesh
             self.error = f"{type(e).__name__}: {e}"
             return False
+        self.show_result(r)
+        return True
+
+    def show_result(self, r):
         self.error = ""
         self.result = r
         base = self.pipe.base(self.design)
@@ -387,7 +404,59 @@ class App:
             self.need_view_reset = False
         if not np.all(np.isfinite(r.mesh.V)):
             self.error = "Non-finite vertices: reduce the weights"
+
+    def predicted_faces(self, depth: int) -> int:
+        """Rough face count after `depth` steps (Catmull-Clark: x4 per step), from the input mesh."""
+        try:
+            n = self.pipe.base(self.design).n_faces
+        except Exception:
+            return 0
+        return int(n * 4 ** depth)
+
+    # ------------------------------------------------------- background
+    def job_key(self, depth: int) -> tuple:
+        return self.snapshot(), depth, self.pipe.face_budget
+
+    def submit(self, kind: str, depth: int) -> bool:
+        """Start computing `depth` in the background process (kind: "preview" or "bake")."""
+        d = self.design
+        try:
+            future = self.worker.submit(background.bake, d.to_dict(), depth, self.pipe.face_budget, self.root)
+        except (BrokenProcessPool, RuntimeError, OSError) as e:
+            self.worker.broken()
+            self.error = f"Background process unavailable ({type(e).__name__}): computing here instead"
+            self.slow = False
+            return False
+        self.job = {"kind": kind, "depth": depth, "key": self.job_key(depth), "generation": self.generation,
+                    "started": time.perf_counter(), "future": future}
         return True
+
+    def poll_job(self, wait: bool = False):
+        """Take a finished background result (or, with wait, wait for the running one)."""
+        job = self.job
+        if job is None or not (wait or job["future"].done()):
+            return
+        self.job = None
+        try:
+            r = self.worker.result(job["future"])
+        except BrokenProcessPool:
+            self.worker.broken()
+            self.slow = False  # previews are computed here again
+            self.error = "The background process stopped (out of memory?): lower the full depth or the face budget"
+            return
+        except Exception as e:  # the design's own error (bad OBJ, ...), as compute() reports it
+            if job["generation"] == self.generation:
+                self.error = f"{type(e).__name__}: {e}"
+            return
+        if job["generation"] != self.generation:
+            return  # another design was loaded meanwhile
+        if job["kind"] == "preview":
+            self.slow = r.seconds > 0.5 * LIVE_BUDGET
+            self.show_result(r)  # (if edited meanwhile, the next one is on its way)
+        elif job["key"] == self.job_key(job["depth"]):
+            self.show_result(r)
+            self.baked = True
+            self.autosave()
 
     def color_values(self, mesh):
         """Per-face values for the 'colour by' mode (or None)."""
@@ -429,21 +498,44 @@ class App:
             ps.get_surface_mesh("form").set_enabled(False)
 
     def tick(self):
-        if self.dirty:
-            self.compute(self.design.preview_depth)
-            self.dirty = False
-        elif (
+        self.poll_job()
+        if self.dirty:  # the preview: right here if the form is quick, else in the background (newest edit wins)
+            if not self.slow:
+                t = time.perf_counter()
+                self.compute(self.design.preview_depth)
+                self.slow = time.perf_counter() - t > LIVE_BUDGET
+                self.dirty = False
+            elif self.job is None:
+                self.dirty = not self.submit("preview", self.design.preview_depth)
+            return
+        if self.job is not None or self.baked or self.error:
+            return
+        if self.want_bake or (
             self.auto_bake
-            and not self.baked
-            and not self.error
             and self.design.full_depth > self.design.preview_depth
             and time.perf_counter() - self.last_edit > AUTO_BAKE_DELAY
             and not psim.IsMouseDown(0)
         ):
-            self.bake()
+            self.want_bake = False
+            if not self.submit("bake", self.design.full_depth):
+                self.bake(wait=True)
 
-    def bake(self):
-        self.baked = self.compute(self.design.full_depth)
+    def bake(self, wait: bool = False):
+        """Compute the full depth. By default in the background (the window stays live and the form is replaced
+        when it is ready); wait=True gives it before returning (export and print need it)."""
+        if not wait:
+            self.want_bake = True
+            return
+        d = self.design
+        job = self.job
+        if job is not None and job["kind"] == "bake" and job["key"] == self.job_key(d.full_depth):
+            self.poll_job(wait=True)
+            if self.baked:
+                return
+        elif job is not None:
+            self.poll_job(wait=True)  # (one job at a time: let it finish)
+        self.want_bake = False
+        self.baked = self.compute(d.full_depth)
         if self.baked:
             self.autosave()
 
@@ -472,6 +564,7 @@ class App:
     def ui(self):
         io = psim.GetIO()
         W, H = io.DisplaySize
+        self.zoom()
         self.tick()
         self.attr_panel.sync(gizmo=self.section == ATTRACTORS and not self.panels_hidden)
         self.intr_panel.sync()
@@ -489,6 +582,28 @@ class App:
         self.section_tool.apply()
         self.history_tick()
         self.track_window(W, H)
+        self._camera = np.array(ps.get_camera_view_matrix())
+        if self.worker.busy() or self.print_panel.worker.busy():
+            time.sleep(0.001)  # lets the worker's helper threads have the GIL (see hansmeyer/background.py)
+
+    def zoom(self):
+        """Replace Polyscope's scroll zoom (already applied this frame, before this callback and before the
+        frame is drawn) with an even, bounded one: see view.zoomed_view."""
+        io = psim.GetIO()
+        wheel = io.MouseWheel
+        if self._camera is None or wheel == 0.0 or io.WantCaptureMouse or (io.KeyShift and not io.KeyCtrl):
+            return  # (shift + scroll is Polyscope's clip-plane shift: left alone)
+        ps.set_camera_view_matrix(zoomed_view(self._camera, ps.get_view_center(), wheel, self.scene_size()))
+
+    def scene_size(self) -> float:
+        """Bounding-box diagonal of what is shown (the form, or the print model in mm)."""
+        pp = self.print_panel
+        V = pp.shown_V if pp.showing and pp.shown_V is not None else (self.result.mesh.V if self.result else None)
+        if V is None or not len(V):
+            return float(ps.get_length_scale())
+        if self._size_cache[0] is not V:
+            self._size_cache = (V, float(np.linalg.norm(np.ptp(V, axis=0))) or 1.0)
+        return self._size_cache[1]
 
     def track_window(self, W, H):
         """Remember the window size between sessions (once it has stopped changing)."""
@@ -526,6 +641,8 @@ class App:
         elif pressed("W"):
             self.show_edges = not self.show_edges
             self.refresh_display()
+        elif pressed("F"):
+            self.set_view(self.design.view)
         elif pressed("H"):
             ui.set_help(not ui.help_on())
             self.remember("help", ui.help_on())
@@ -696,7 +813,9 @@ class App:
         for i, (view, label) in enumerate(VIEWS):
             if i:
                 psim.SameLine()
-            if ui.toggle(label, self.design.view == view, f"view{view}", f"{view.replace('_', ' ')} view ({i + 1})"):
+            if ui.toggle(label, self.design.view == view, f"view{view}",
+                         f"{view.replace('_', ' ')} view ({i + 1}). F frames the form again; double-click a point "
+                         "of the form to orbit and zoom around it."):
                 self.set_view(view)
         psim.PopStyleVar()
         psim.SameLine(0.0, 16.0)
@@ -764,6 +883,10 @@ class App:
             size = f" · {d.vessel['diameter_mm']:.0f} mm sphere" if vessel.active(d) else ""
             ui.text(f"{state} · depth {r.depth_reached} · {r.mesh.n_faces:,} faces · {r.seconds * 1000:.0f} ms{size}",
                     "fg")
+            if self.job is not None:
+                psim.SameLine(0.0, 12.0)
+                ui.text(f"{'baking' if self.job['kind'] == 'bake' else 'updating'} depth {self.job['depth']} … "
+                        f"{time.perf_counter() - self.job['started']:.1f} s", "dim")
             if r.capped_by_budget:
                 psim.SameLine(0.0, 12.0)
                 ui.text(f"capped at depth {r.depth_reached} by the face budget (schedule section)", "warn")
@@ -1069,7 +1192,7 @@ class App:
 
     def export_mesh(self):
         if not self.baked:
-            self.bake()
+            self.bake(wait=True)
         if not self.result:
             return
         path = os.path.join(EXPORT_DIR, f"{self._stem()}.{EXPORT_FORMATS[self.export_fmt]}")
@@ -1130,6 +1253,8 @@ def main():
     app = App()
     ps.set_user_callback(app.safe_ui)
     ps.show()
+    app.worker.stop()
+    app.print_panel.worker.stop()
 
 
 if __name__ == "__main__":

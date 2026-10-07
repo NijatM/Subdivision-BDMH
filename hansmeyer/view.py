@@ -55,39 +55,71 @@ VIEWS = {
 }
 
 
-def setup_scene(window=(1280, 900), theme: str = "dark", title: str = "SubdivisionEngine_BDMH"):
+def setup_scene(window=(1280, 900), theme: str = "dark", title: str = "SubdivisionEngine_BDMH", ssaa: int | None = None):
+    """ssaa: supersampling factor; by default 2 on ordinary screens and 1 on Retina screens, which already draw
+    2 x 2 pixels per point (supersampling those as well renders 16 pixels per point, ~3x the GPU time per frame)."""
     ps.set_program_name(title)
     ps.set_window_size(*window)
     ps.set_up_dir("y_up")
-    ps.set_SSAA_factor(2)
     ps.init()
+    if ssaa is None:
+        (w, _), (bw, _) = ps.get_window_size(), ps.get_buffer_size()
+        ssaa = 1 if bw >= 1.5 * max(w, 1) else 2
+    ps.set_SSAA_factor(int(ssaa))
     apply_scene_theme(theme)
+
+
+_shown = {"faces": None, "label": None}  # what the "form" structure was registered with
 
 
 def show_mesh(mesh: PolyMesh, edges: bool | None = None, face_values: np.ndarray | None = None,
               vrange: tuple | None = None, label: str = "influence", cmap: str = "viridis"):
-    """Register the form; optional per-face scalar (e.g. attractor influence) shown as a colour map."""
+    """Register the form; optional per-face scalar (e.g. attractor influence) shown as a colour map.
+    When only the positions changed (a slider step), the vertices are updated in place: much cheaper than
+    registering the mesh again."""
     edges = mesh.n_faces <= 30_000 if edges is None else edges
-    s = ps.register_surface_mesh(
-        MESH_NAME,
-        mesh.V,
-        mesh.display_faces(),
-        color=MESH_COLOR,
-        material="clay",
-        smooth_shade=False,
-        edge_width=0.6 if edges else 0.0,
-        edge_color=THEMES[_theme["name"]]["edge"],
-        back_face_policy="custom",
-        back_face_color=BACK_COLOR,
-    )
+    disp = mesh.display_faces()
+    prev = _shown["faces"]  # (face_ptr, face_idx, vertex count)
+    same = (ps.has_surface_mesh(MESH_NAME) and prev is not None and prev[2] == len(mesh.V)
+            and (prev[1] is mesh.face_idx or (len(prev[1]) == len(mesh.face_idx) and np.array_equal(prev[0], mesh.face_ptr)
+                                              and np.array_equal(prev[1], mesh.face_idx))))
+    if same:
+        s = ps.get_surface_mesh(MESH_NAME)
+        s.update_vertex_positions(mesh.V)
+        s.set_edge_width(0.6 if edges else 0.0)
+        s.set_edge_color(THEMES[_theme["name"]]["edge"])
+        if face_values is None or label != _shown["label"]:
+            s.remove_all_quantities()
+    else:
+        s = ps.register_surface_mesh(
+            MESH_NAME,
+            mesh.V,
+            disp,
+            color=MESH_COLOR,
+            material="clay",
+            smooth_shade=False,
+            edge_width=0.6 if edges else 0.0,
+            edge_color=THEMES[_theme["name"]]["edge"],
+            back_face_policy="custom",
+            back_face_color=BACK_COLOR,
+        )
+        _shown["faces"] = (mesh.face_ptr, mesh.face_idx, len(mesh.V))
+    _shown["label"] = label if face_values is not None else None
     if face_values is not None:
         vals = np.asarray(face_values, float)
-        disp = mesh.display_faces()
         if len(disp) != mesh.n_faces:  # display was triangulated: one value per triangle
             vals = np.repeat(vals, mesh.face_size - 2)
         lo, hi = vrange if vrange else (float(vals.min()), float(max(vals.max(), vals.min() + 1e-9)))
         s.add_scalar_quantity(label, vals, defined_on="faces", enabled=True, cmap=cmap, vminmax=(lo, hi))
     return s
+
+
+def look(eye, target) -> None:
+    """Point the camera at `target` and make it the orbit / zoom centre. (Polyscope's look_at alone keeps
+    the old centre's distance along the new view ray, so the form would orbit around an empty point and
+    zoom in steps sized by that stale distance.)"""
+    ps.look_at(tuple(map(float, eye)), tuple(map(float, target)))
+    ps.set_view_center_raw(tuple(map(float, target)))
 
 
 def set_view(mesh: PolyMesh, view: str = "diagonal", distance: float = 3.2):
@@ -96,8 +128,32 @@ def set_view(mesh: PolyMesh, view: str = "diagonal", distance: float = 3.2):
     lo, hi = mesh.V.min(axis=0), mesh.V.max(axis=0)
     center = 0.5 * (lo + hi)
     radius = 0.5 * np.linalg.norm(hi - lo)
-    eye = center + direction / np.linalg.norm(direction) * radius * distance
-    ps.look_at(tuple(eye), tuple(center))
+    look(center + direction / np.linalg.norm(direction) * radius * distance, center)
+
+
+# Scroll zoom. Polyscope moves the camera by a share of the distance to the orbit centre times the raw
+# wheel delta, which on macOS trackpads and accelerated wheels varies wildly from event to event. Ours:
+# every notch covers the same share of the remaining distance, one frame's delta is capped, and the
+# distance stays within sensible bounds of the object's size, so the form can't be overshot or lost.
+ZOOM_RATE = 0.12  # per wheel notch: 1 - exp(-0.12) = 11 % of the remaining distance
+ZOOM_MAX_STEP = 2.5  # wheel units per frame (trackpad momentum spikes)
+ZOOM_NEAR, ZOOM_FAR = 0.01, 15.0  # closest / furthest distance to the centre, x the object's size
+
+
+def zoomed_view(view_mat, center, wheel: float, size: float) -> np.ndarray:
+    """The camera view matrix after `wheel` notches of zoom toward `center` (positive = closer)."""
+    M = np.array(view_mat, float)
+    R = M[:3, :3]
+    pos = -R.T @ M[:3, 3]
+    forward = -R[2]  # cameras look down -z
+    d = float(np.dot(np.asarray(center, float) - pos, forward))
+    if d <= 1e-9:  # centre behind the camera: fall back to the straight distance
+        d = float(np.linalg.norm(np.asarray(center, float) - pos)) or size
+    step = float(np.clip(wheel, -ZOOM_MAX_STEP, ZOOM_MAX_STEP))
+    new_d = float(np.clip(d * np.exp(-ZOOM_RATE * step), ZOOM_NEAR * size, ZOOM_FAR * size))
+    out = M.copy()
+    out[:3, 3] = -R @ (pos + forward * (d - new_d))
+    return out
 
 
 def write_png(path: str, rgba: np.ndarray) -> None:

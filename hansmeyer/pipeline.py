@@ -57,11 +57,15 @@ class RunResult:
 
 
 class Pipeline:
-    def __init__(self, face_budget: int = DEFAULT_FACE_BUDGET, max_cached: int = 32, root: str | None = None):
+    def __init__(self, face_budget: int = DEFAULT_FACE_BUDGET, max_cached: int = 32, root: str | None = None,
+                 max_bytes: int = 1_000_000_000):
         self.root = root  # resolves relative OBJ paths
         self.face_budget = face_budget
         self.max_cached = max_cached
+        self.max_bytes = max_bytes  # the level cache also stays under this much memory
         self._cache: OrderedDict[str, PolyMesh] = OrderedDict()
+        self._sizes: dict[str, int] = {}
+        self._bytes = 0
 
     def _get(self, key):
         m = self._cache.get(key)
@@ -70,20 +74,27 @@ class Pipeline:
         return m
 
     def _put(self, key, mesh):
+        if key in self._cache:
+            self._bytes -= self._sizes.pop(key)
         self._cache[key] = mesh
         self._cache.move_to_end(key)
-        while len(self._cache) > self.max_cached:
-            self._cache.popitem(last=False)
+        self._sizes[key] = mesh.nbytes() + mesh.face_idx.nbytes
+        self._bytes += self._sizes[key]
+        while len(self._cache) > 1 and (len(self._cache) > self.max_cached or self._bytes > self.max_bytes):
+            old, _ = self._cache.popitem(last=False)
+            self._bytes -= self._sizes.pop(old)
 
     def clear(self):
         self._cache.clear()
+        self._sizes.clear()
+        self._bytes = 0
 
     def base(self, design: Design) -> PolyMesh:
         """The (cached) input mesh of a design."""
         key = design.base_key(self.root)
         mesh = self._get(key)
         if mesh is None:
-            mesh = make_base(design.base, self.root)
+            mesh = make_base(design.base, self.root).share_topology()  # same faces, new positions: tables reused
             mesh.vattr["rest"] = mesh.V.copy()  # input-mesh position, carried through subdivision
             intrinsic.decorate_base(design, mesh)  # tags, locks, original vertex/edge markers
             if design.boundary == "locked":

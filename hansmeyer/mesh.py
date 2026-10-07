@@ -9,6 +9,8 @@ vertex of the same face.
 
 from __future__ import annotations
 
+import weakref
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from functools import cached_property
 
@@ -36,6 +38,81 @@ def _normalize(v: np.ndarray) -> np.ndarray:
     return v / np.maximum(n, _EPS)
 
 
+def scatter_add(index: np.ndarray, values: np.ndarray, n: int) -> np.ndarray:
+    """out[i] = sum of values[j] with index[j] == i, for 1-D or (k, c) values (np.add.at, ~10x faster)."""
+    values = np.asarray(values, float)
+    if values.ndim == 1:
+        return np.bincount(index, values, minlength=n)
+    flat = values.reshape(len(values), -1)
+    out = np.stack([np.bincount(index, flat[:, c], minlength=n) for c in range(flat.shape[1])], axis=1)
+    return out.reshape((n,) + values.shape[1:])
+
+
+class Topology:
+    """The connectivity of a mesh (its faces and vertex count) with the tables derived from it.
+
+    Meshes with the same faces share one Topology, so the half-edge and edge tables are built once:
+    every slider step that only moves vertices (the subdivision connectivity depends on the input mesh
+    alone), every displacement layer, every rerun of the schedule. A subdivision step keeps the next
+    level's connectivity in ``children`` for as long as some mesh uses it."""
+
+    __slots__ = ("face_ptr", "face_idx", "n_verts", "cache", "children", "extra", "__weakref__")
+
+    def __init__(self, face_ptr: np.ndarray, face_idx: np.ndarray, n_verts: int, extra=None):
+        self.face_ptr, self.face_idx, self.n_verts = face_ptr, face_idx, int(n_verts)
+        self.cache: dict = {}
+        self.children = weakref.WeakValueDictionary()
+        self.extra = extra  # whatever the step that built it wants to reuse (e.g. vertex / face provenance)
+
+    def child(self, key, build) -> "Topology":
+        """The connectivity one subdivision step (`key`) produces from this one, built once."""
+        topo = self.children.get(key)
+        if topo is None:
+            topo = build()
+            self.children[key] = topo
+        return topo
+
+    def nbytes(self) -> int:
+        return self.face_ptr.nbytes + self.face_idx.nbytes + sum(
+            sum(x.nbytes for x in v if isinstance(x, np.ndarray)) if isinstance(v, tuple) else v.nbytes
+            for v in self.cache.values())
+
+
+_SHARED_TOPOLOGIES: OrderedDict = OrderedDict()
+
+
+def shared_topology(face_ptr: np.ndarray, face_idx: np.ndarray, n_verts: int, keep: int = 4) -> Topology:
+    """The Topology for these faces, reused while the same connectivity comes back (input meshes: a size
+    slider rebuilds the base mesh with new positions but the same faces). For small meshes only."""
+    key = (int(n_verts), np.asarray(face_ptr, np.int64).tobytes(), np.asarray(face_idx, np.int64).tobytes())
+    topo = _SHARED_TOPOLOGIES.get(key)
+    if topo is None:
+        topo = _SHARED_TOPOLOGIES[key] = Topology(np.asarray(face_ptr, np.int64), np.asarray(face_idx, np.int64),
+                                                  n_verts)
+        while len(_SHARED_TOPOLOGIES) > keep:
+            _SHARED_TOPOLOGIES.popitem(last=False)
+    _SHARED_TOPOLOGIES.move_to_end(key)
+    return topo
+
+
+class shared_property:
+    """Like cached_property, for tables of the connectivity alone: kept on the mesh's Topology, so every
+    mesh with the same faces computes it once."""
+
+    def __init__(self, fn):
+        self.fn, self.name = fn, fn.__name__
+        self.__doc__ = fn.__doc__
+
+    def __get__(self, mesh, owner=None):
+        if mesh is None:
+            return self
+        cache = mesh.topo.cache
+        value = cache.get(self.name)
+        if value is None:
+            value = cache[self.name] = self.fn(mesh)
+        return value
+
+
 @dataclass(eq=False)
 class PolyMesh:
     V: np.ndarray  # (N, 3) float64 positions
@@ -46,11 +123,16 @@ class PolyMesh:
     vattr: dict = field(default_factory=dict)  # per-vertex attributes carried through subdivision
     fattr: dict = field(default_factory=dict)  # per-face attributes (e.g. group tag bits), inherited by child faces
     info: dict = field(default_factory=dict)  # per-level notes (e.g. merge statistics)
+    topo: Topology = field(default=None, repr=False)  # shared connectivity tables (see Topology)
 
     def __post_init__(self):
         self.V = np.ascontiguousarray(self.V, dtype=np.float64)
-        self.face_ptr = np.asarray(self.face_ptr, dtype=np.int64)
-        self.face_idx = np.asarray(self.face_idx, dtype=np.int64)
+        if self.topo is None:
+            self.topo = Topology(np.asarray(self.face_ptr, dtype=np.int64), np.asarray(self.face_idx, dtype=np.int64),
+                                 len(self.V))
+        elif self.topo.n_verts != len(self.V) or len(self.topo.face_ptr) != len(self.face_ptr):
+            raise ValueError("topology does not match the vertices / faces")
+        self.face_ptr, self.face_idx = self.topo.face_ptr, self.topo.face_idx
         if self.vtype is None:
             self.vtype = np.full(len(self.V), VTYPE_BASE, dtype=np.int8)
         if self.fclass is None:
@@ -68,6 +150,26 @@ class PolyMesh:
         idx = np.concatenate(faces) if faces else np.zeros(0, np.int64)
         return cls(np.asarray(V, float), ptr, idx)
 
+    def __getstate__(self):
+        """Pickled (sent to or from a worker process) without the derived tables; they are rebuilt on demand."""
+        return {k: self.__dict__[k] for k in ("V", "face_ptr", "face_idx", "vtype", "fclass", "vattr", "fattr", "info")}
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self.topo = Topology(self.face_ptr, self.face_idx, len(self.V))
+
+    def nbytes(self) -> int:
+        """Memory of the mesh's own arrays (the shared connectivity tables not included)."""
+        arrays = [self.V, self.vtype, self.fclass, *self.vattr.values(), *self.fattr.values()]
+        arrays += [v for k, v in self.__dict__.items() if isinstance(v, np.ndarray) and k not in ("face_ptr", "face_idx")]
+        return sum(a.nbytes for a in arrays)
+
+    def share_topology(self) -> "PolyMesh":
+        """Reuse the connectivity tables of an earlier mesh with the same faces (see shared_topology)."""
+        self.topo = shared_topology(self.face_ptr, self.face_idx, self.n_verts)
+        self.face_ptr, self.face_idx = self.topo.face_ptr, self.topo.face_idx
+        return self
+
     # ------------------------------------------------------------- basic info
     @property
     def n_verts(self) -> int:
@@ -81,7 +183,7 @@ class PolyMesh:
     def n_halfedges(self) -> int:
         return len(self.face_idx)
 
-    @cached_property
+    @shared_property
     def face_size(self) -> np.ndarray:
         return np.diff(self.face_ptr)
 
@@ -92,11 +194,11 @@ class PolyMesh:
         return self.n_faces > 0 and bool(np.all(self.face_size == 4))
 
     # ------------------------------------------------------------- half-edges
-    @cached_property
+    @shared_property
     def he_face(self) -> np.ndarray:
         return np.repeat(np.arange(self.n_faces), self.face_size)
 
-    @cached_property
+    @shared_property
     def he_next(self) -> np.ndarray:
         h = np.arange(self.n_halfedges)
         nxt = h + 1
@@ -104,7 +206,7 @@ class PolyMesh:
         nxt[ends] = self.face_ptr[:-1]
         return nxt
 
-    @cached_property
+    @shared_property
     def he_prev(self) -> np.ndarray:
         prv = np.empty(self.n_halfedges, dtype=np.int64)
         prv[self.he_next] = np.arange(self.n_halfedges)
@@ -114,35 +216,39 @@ class PolyMesh:
     def he_from(self) -> np.ndarray:
         return self.face_idx
 
-    @cached_property
+    @shared_property
     def he_to(self) -> np.ndarray:
         return self.face_idx[self.he_next]
 
-    @cached_property
+    @shared_property
     def _edge_data(self):
+        """(edge of each half-edge, twin half-edge or -1, lowest half-edge of each edge, edge count).
+        Edges are numbered in order of their (lower, higher) vertex pair, with one sort."""
+        H = self.n_halfedges
         a, b = self.he_from, self.he_to
-        lo, hi = np.minimum(a, b), np.maximum(a, b)
-        key = lo * self.n_verts + hi
-        uniq, he_edge, counts = np.unique(key, return_inverse=True, return_counts=True)
+        key = np.minimum(a, b) * max(self.n_verts, 1) + np.maximum(a, b)
+        order = np.argsort(key)
+        sk = key[order]
+        new = np.ones(H, dtype=bool)
+        new[1:] = sk[1:] != sk[:-1]
+        starts = np.flatnonzero(new)
+        counts = np.diff(np.append(starts, H))
         if np.any(counts > 2):
             raise ValueError("non-manifold mesh: an edge is shared by more than two faces")
+        he_edge = np.empty(H, dtype=np.int64)
+        he_edge[order] = np.cumsum(new) - 1
         # twin: the other half-edge with the same undirected key
-        order = np.argsort(he_edge, kind="stable")
-        sorted_edges = he_edge[order]
-        twin = np.full(self.n_halfedges, -1, dtype=np.int64)
-        same = sorted_edges[:-1] == sorted_edges[1:]
-        i = np.nonzero(same)[0]
-        twin[order[i]] = order[i + 1]
-        twin[order[i + 1]] = order[i]
+        twin = np.full(H, -1, dtype=np.int64)
+        pair = starts[counts == 2]
+        h0, h1 = order[pair], order[pair + 1]
+        twin[h0], twin[h1] = h1, h0
         # consistent orientation: twins must run in opposite directions
-        has = twin >= 0
-        if np.any(self.he_from[has] == self.he_from[twin[has]]):
+        if np.any(self.he_from[h0] == self.he_from[h1]):
             raise ValueError("inconsistently oriented mesh: neighbouring faces disagree on winding")
         # one representative half-edge per undirected edge (the lower index)
-        n_edges = len(uniq)
-        edge_he = np.full(n_edges, np.iinfo(np.int64).max, dtype=np.int64)
-        np.minimum.at(edge_he, he_edge, np.arange(self.n_halfedges))
-        return he_edge.astype(np.int64), twin, edge_he, n_edges
+        edge_he = order[starts]
+        edge_he[counts == 2] = np.minimum(h0, h1)
+        return he_edge, twin, edge_he, len(starts)
 
     @property
     def he_edge(self) -> np.ndarray:
@@ -161,12 +267,12 @@ class PolyMesh:
     def n_edges(self) -> int:
         return self._edge_data[3]
 
-    @cached_property
+    @shared_property
     def edge_verts(self) -> np.ndarray:
         h = self.edge_he
         return np.stack([self.he_from[h], self.he_to[h]], axis=1)
 
-    @cached_property
+    @shared_property
     def edge_faces(self) -> np.ndarray:
         """(E, 2) adjacent faces; column 1 is -1 on boundary edges."""
         h = self.edge_he
@@ -174,23 +280,23 @@ class PolyMesh:
         f2 = np.where(t >= 0, self.he_face[np.maximum(t, 0)], -1)
         return np.stack([self.he_face[h], f2], axis=1)
 
-    @cached_property
+    @shared_property
     def edge_is_boundary(self) -> np.ndarray:
         return self.he_twin[self.edge_he] < 0
 
-    @cached_property
+    @shared_property
     def vert_is_boundary(self) -> np.ndarray:
         out = np.zeros(self.n_verts, dtype=bool)
         ev = self.edge_verts[self.edge_is_boundary]
         out[ev.ravel()] = True
         return out
 
-    @cached_property
+    @shared_property
     def valence(self) -> np.ndarray:
         """Number of incident edges per vertex."""
         return np.bincount(self.edge_verts.ravel(), minlength=self.n_verts)
 
-    @cached_property
+    @shared_property
     def vert_face_count(self) -> np.ndarray:
         return np.bincount(self.he_from, minlength=self.n_verts)
 
@@ -257,9 +363,7 @@ class PolyMesh:
     @cached_property
     def vert_normal(self) -> np.ndarray:
         """Area-weighted average of incident face normals (paper: n_p)."""
-        n = np.zeros_like(self.V)
-        np.add.at(n, self.he_from, self.face_area_vec[self.he_face])
-        return _normalize(n)
+        return _normalize(scatter_add(self.he_from, self.face_area_vec[self.he_face], self.n_verts))
 
     def edge_mean(self, per_face: np.ndarray) -> np.ndarray:
         """Average a per-face quantity onto edges."""
@@ -271,8 +375,7 @@ class PolyMesh:
 
     def vert_mean(self, per_face: np.ndarray) -> np.ndarray:
         """Average a per-face quantity onto vertices."""
-        acc = np.zeros((self.n_verts,) + per_face.shape[1:])
-        np.add.at(acc, self.he_from, per_face[self.he_face])
+        acc = scatter_add(self.he_from, per_face[self.he_face], self.n_verts)
         cnt = np.maximum(self.vert_face_count, 1).reshape((-1,) + (1,) * (per_face.ndim - 1))
         return acc / cnt
 
@@ -303,8 +406,15 @@ class PolyMesh:
         return float(np.sum(self.face_area_vec * self.face_centroid) / 3.0)
 
     # --------------------------------------------------------------- display
+    @shared_property
+    def _triangles(self) -> np.ndarray:
+        return self._fan_triangles()
+
     def triangles(self) -> np.ndarray:
         """Fan triangulation (for display / STL export)."""
+        return self._triangles
+
+    def _fan_triangles(self) -> np.ndarray:
         sizes = self.face_size
         n_tri = sizes - 2
         starts = np.repeat(self.face_ptr[:-1], n_tri)
