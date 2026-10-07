@@ -1,0 +1,80 @@
+{
+  "name": "cube_locked_edges",
+  "description": "Two edges of the cube are locked for 7 iterations (group 'edges', lock 7). The rest of the form bulges and rounds; the locked edges stay straight, sharp creases. Lower the lock iterations to soften them.\nref: Hansmeyer 2010, Fig. 9.",
+  "base": {
+    "shape": "cube"
+  },
+  "extrusion": "relative",
+  "boundary": "smooth",
+  "fade_rows": 2.0,
+  "preview_depth": 5,
+  "full_depth": 7,
+  "iterations": [
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_f": 0.4
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_f": 0.4
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_f": 0.4
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_f": 0.4
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {}
+    },
+    {
+      "scheme": "cc",
+      "weights": {}
+    },
+    {
+      "scheme": "cc",
+      "weights": {}
+    },
+    {
+      "scheme": "cc",
+      "weights": {}
+    },
+    {
+      "scheme": "cc",
+      "weights": {}
+    },
+    {
+      "scheme": "cc",
+      "weights": {}
+    }
+  ],
+  "view": "three_quarter",
+  "attractor_space": "current",
+  "background": 1.0,
+  "groups": [
+    {
+      "name": "edges",
+      "enabled": true,
+      "faces": [],
+      "verts": [
+        4,
+        5,
+        7
+      ],
+      "lock": 7,
+      "lock_faces": false,
+      "rules": []
+    }
+  ]
+}

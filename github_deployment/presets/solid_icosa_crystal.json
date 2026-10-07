@@ -1,0 +1,90 @@
+{
+  "name": "solid_icosa_crystal",
+  "description": "Platonic solids study: a strong first extrusion plus eq. 4 tip concentration gives faceted, crystal-like petals.",
+  "base": {
+    "shape": "icosahedron"
+  },
+  "extrusion": "relative",
+  "boundary": "smooth",
+  "fade_rows": 2.0,
+  "preview_depth": 5,
+  "full_depth": 8,
+  "iterations": [
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_f": 0.8,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_f": 0.5,
+        "w1": -1.0,
+        "w2": -2.0,
+        "w3": -1.0,
+        "w4": 1.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_f": 0.3,
+        "w_c": -0.3,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_f": 0.3,
+        "w1": -1.0,
+        "w2": -2.0,
+        "w3": -1.0,
+        "w4": 1.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_e": 0.25,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_f": 0.1,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {}
+    },
+    {
+      "scheme": "cc",
+      "weights": {}
+    }
+  ],
+  "view": "diagonal"
+}

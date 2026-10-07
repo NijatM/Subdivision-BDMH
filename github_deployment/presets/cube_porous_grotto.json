@@ -1,0 +1,99 @@
+{
+  "name": "cube_porous_grotto",
+  "description": "The six-arms recipe with vertex merging (distance 0.12, max valence 6): where the sheets collapse into the centre they are welded and faces are dropped, opening holes and handles (watch the Euler characteristic in porosity).",
+  "base": {
+    "shape": "cube"
+  },
+  "extrusion": "relative",
+  "boundary": "smooth",
+  "fade_rows": 2.0,
+  "preview_depth": 5,
+  "full_depth": 7,
+  "iterations": [
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_f": 0.3,
+        "w_c": -1.2,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_c": -0.4,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_f": 0.4,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_f": 0.6,
+        "w1": -1.0,
+        "w2": -2.0,
+        "w3": 1.0,
+        "w4": -1.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_e": 0.4,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_e": -0.3,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_f": 0.2,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {}
+    },
+    {
+      "scheme": "cc",
+      "weights": {}
+    }
+  ],
+  "view": "diagonal",
+  "attractor_space": "current",
+  "background": 1.0,
+  "merge": {
+    "enabled": true,
+    "distance": 0.12,
+    "relative": true,
+    "max_valence": 6,
+    "from": 3,
+    "to": 6
+  }
+}

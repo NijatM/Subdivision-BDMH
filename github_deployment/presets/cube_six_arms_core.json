@@ -1,0 +1,96 @@
+{
+  "name": "cube_six_arms_core",
+  "description": "The six-arms recipe with a harder first corner pull (w_c -1.6, w1 -0.3), ribbed second step and a strong step-4 bulge (w_f 1.04): a tight, sharp core with heavy arm ends.\nref: Hansmeyer 2010, Fig. 3 (left).",
+  "base": {
+    "shape": "cube"
+  },
+  "extrusion": "relative",
+  "boundary": "smooth",
+  "fade_rows": 2.0,
+  "preview_depth": 5,
+  "full_depth": 8,
+  "iterations": [
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_f": 0.20000000298023224,
+        "w_e": -0.1599999964237213,
+        "w_c": -1.6100000143051147,
+        "w1": -0.3100000023841858,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_f": -0.10000000149011612,
+        "w_e": 0.20999999344348907,
+        "w_c": -0.3100000023841858,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_f": 0.4,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_f": 1.0399999618530273,
+        "w1": -1.0,
+        "w2": -2.0,
+        "w3": 1.0,
+        "w4": -1.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_f": -0.05000000074505806,
+        "w_e": 0.17000000178813934,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_e": -0.3,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_f": 0.2,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_e": 0.15,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {}
+    },
+    {
+      "scheme": "cc",
+      "weights": {}
+    }
+  ],
+  "view": "diagonal",
+  "attractor_space": "current",
+  "background": 1.0
+}

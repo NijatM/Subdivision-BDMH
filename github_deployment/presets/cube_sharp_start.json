@@ -1,0 +1,77 @@
+{
+  "name": "cube_sharp_start",
+  "description": "w1 = -1, w2 = -2 on every iteration switches off Catmull-Clark smoothing, so extrusions accumulate instead of melting. A good starting point for exploration.",
+  "base": {
+    "shape": "cube"
+  },
+  "extrusion": "relative",
+  "preview_depth": 5,
+  "full_depth": 8,
+  "iterations": [
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {}
+    },
+    {
+      "scheme": "cc",
+      "weights": {}
+    }
+  ],
+  "view": "diagonal"
+}

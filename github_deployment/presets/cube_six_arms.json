@@ -1,0 +1,88 @@
+{
+  "name": "cube_six_arms",
+  "description": "Strong negative corner extrusion (w_c) pulls the 8 cube corners into the body, so the 6 faces grow into arms; later iterations bulge the arm ends (eq. 4) and add ribs (w_e). The arms are reproduced; the paper's fluted fans at the tips are not yet.\nref: Hansmeyer 2010, Fig. 3 (left).",
+  "base": {
+    "shape": "cube"
+  },
+  "extrusion": "relative",
+  "preview_depth": 5,
+  "full_depth": 8,
+  "iterations": [
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_f": 0.3,
+        "w_c": -1.2,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_c": -0.4,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_f": 0.4,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_f": 0.6,
+        "w1": -1.0,
+        "w2": -2.0,
+        "w3": 1.0,
+        "w4": -1.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_e": 0.4,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_e": -0.3,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_f": 0.2,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {
+        "w_e": 0.15,
+        "w1": -1.0,
+        "w2": -2.0
+      }
+    },
+    {
+      "scheme": "cc",
+      "weights": {}
+    },
+    {
+      "scheme": "cc",
+      "weights": {}
+    }
+  ],
+  "view": "diagonal"
+}
